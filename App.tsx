@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { POKEMON_DB, MAP_DATA } from './constants';
 import { PokemonInstance, PokemonTemplate, GameState, LogEntry, Move } from './types';
@@ -7,6 +6,8 @@ import { PokemonInstance, PokemonTemplate, GameState, LogEntry, Move } from './t
 const randInt = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)) + a;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const expNeeded = (level: number) => 50 + (level - 1) * 10;
+
+type WeatherType = 'Clear' | 'Rain' | 'Snow';
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>('start');
@@ -26,6 +27,7 @@ const App: React.FC = () => {
   const [enemyFainted, setEnemyFainted] = useState(false);
   const [playerShaking, setPlayerShaking] = useState(false);
   const [enemyShaking, setEnemyShaking] = useState(false);
+  const [weather, setWeather] = useState<WeatherType>('Clear');
   
   // Ref lưu trữ cấu hình bảo mật từ Backend
   const secureConfig = useRef({ spawnRate: 0.05, buff: 2.0 });
@@ -101,6 +103,10 @@ const App: React.FC = () => {
     let t: PokemonTemplate;
     let enemyLevel: number;
 
+    const weathers: WeatherType[] = ['Clear', 'Rain', 'Snow'];
+    const newWeather = weathers[Math.floor(Math.random() * weathers.length)];
+    setWeather(newWeather);
+
     if (isLegend) {
       t = POKEMON_DB.legendary[Math.floor(Math.random() * POKEMON_DB.legendary.length)];
       enemyLevel = maxPlayerLv + 10;
@@ -123,6 +129,8 @@ const App: React.FC = () => {
     setTimeout(() => {
       setGameState('battle');
       addLog(newEnemy.isLegendary ? `⚠ CẢNH BÁO: PHÁT HIỆN ${newEnemy.name} HUYỀN THOẠI!` : `Một ${newEnemy.name} hoang dã xuất hiện!`);
+      if (newWeather === 'Rain') addLog("Trời bắt đầu đổ mưa...");
+      if (newWeather === 'Snow') addLog("Một trận bão tuyết đang thổi tới...");
     }, 2200);
   }, [playerTeam, addLog]);
 
@@ -130,12 +138,20 @@ const App: React.FC = () => {
     if (gameState !== 'lobby' || isBusy) return;
     const nx = pos.x + dx;
     const ny = pos.y + dy;
-    if (nx < 0 || nx >= MAP_DATA[0].length || ny < 0 || ny >= MAP_DATA.length || MAP_DATA[ny][nx] === 2) return;
+    
+    // Kiểm tra giới hạn bản đồ
+    if (ny < 0 || ny >= MAP_DATA.length || nx < 0 || nx >= MAP_DATA[0].length) return;
+    
+    const targetTile = MAP_DATA[ny][nx];
+    
+    // Quy tắc va chạm: 0 và 1 có thể đi qua, 2 và 3 bị chặn
+    // Lưu ý: Mặc dù ô 3 là hồi phục, theo yêu cầu "2 or 3 = blocked", nó sẽ chặn bước chân người chơi.
+    if (targetTile === 2 || targetTile === 3) return;
+
     setPos({ x: nx, y: ny });
-    if (MAP_DATA[ny][nx] === 3) {
-      setPlayerTeam(prev => prev.map(p => ({ ...p, currentHp: p.maxHp })));
-    }
-    if (MAP_DATA[ny][nx] === 1 && Math.random() < 0.15) {
+    
+    // Xử lý sự kiện tại ô cỏ (1)
+    if (targetTile === 1 && Math.random() < 0.15) {
       startBattle();
     }
   }, [gameState, isBusy, pos, startBattle]);
@@ -164,15 +180,33 @@ const App: React.FC = () => {
     setIsBusy(false);
     setMustSwitch(false);
     setEnemyFainted(false);
+    setWeather('Clear');
+  };
+
+  const calculateDamage = (m: Move, attacker: PokemonInstance, isPlayerAttacking: boolean) => {
+    let pwr = m.pwr;
+    if (weather === 'Rain' && m.type === 'Water') pwr *= 1.2;
+    if (weather === 'Snow' && m.type === 'Ice') pwr *= 1.2;
+    if (weather === 'Clear' && m.type === 'Fire') pwr *= 1.1;
+
+    const baseDmg = Math.floor((pwr / 5) * (attacker.level / 5) + (attacker.baseAtk / 18));
+    return Math.max(1, isPlayerAttacking ? baseDmg + 5 : baseDmg);
   };
 
   const enemyTurn = async (currentEnemy: PokemonInstance, currentPlayer: PokemonInstance) => {
     if (!currentEnemy || currentEnemy.currentHp <= 0) return;
     const m = currentEnemy.moves[Math.floor(Math.random() * currentEnemy.moves.length)];
     addLog(`${currentEnemy.name} sử dụng ${m.name}!`, 'enemy');
+    
+    if (weather === 'Snow' && Math.random() < 0.1) {
+      addLog("Nhưng chiêu thức đã bị hụt do bão tuyết!", 'system');
+      return;
+    }
+
     setPlayerShaking(true);
     setBattleFlash(true);
-    const dmg = Math.max(1, Math.floor((m.pwr / 5) * (currentEnemy.level / 5) + (currentEnemy.baseAtk / 18)));
+    const dmg = calculateDamage(m, currentEnemy, false);
+    
     setTimeout(() => {
       setPlayerShaking(false);
       setBattleFlash(false);
@@ -196,12 +230,15 @@ const App: React.FC = () => {
     setIsBusy(true);
     const p = playerTeam[activeIdx];
     addLog(`${p.name} dùng chiêu ${m.name}!`, 'player');
+    
     setEnemyShaking(true);
-    const dmg = Math.max(0, Math.floor((m.pwr / 5) * (p.level / 5) + (p.baseAtk / 20) + 5));
+    const dmg = calculateDamage(m, p, true);
     const newEnemyHp = Math.max(0, enemy.currentHp - dmg);
     setEnemy(prev => prev ? { ...prev, currentHp: newEnemyHp } : null);
+    
     await new Promise(r => setTimeout(r, 600));
     setEnemyShaking(false);
+    
     if (newEnemyHp <= 0) {
       addLog(`${enemy.name} đã bị đánh bại!`, 'system');
       setEnemyFainted(true);
@@ -391,7 +428,19 @@ const App: React.FC = () => {
 
       {gameState === 'battle' && enemy && (
         <div className="fixed inset-0 battle-bg z-[80] flex flex-col">
+          <div className="battle-field-ground"></div>
           <div className={`absolute inset-0 pointer-events-none z-50 ${battleFlash ? 'flash-red' : ''}`}></div>
+          
+          <div className="weather-layer">
+            {weather === 'Rain' && Array.from({ length: 40 }).map((_, i) => (
+              <div key={i} className="rain-drop" style={{ left: `${Math.random() * 100}%`, animationDelay: `${Math.random() * 1}s`, opacity: Math.random() }}></div>
+            ))}
+            {weather === 'Snow' && Array.from({ length: 30 }).map((_, i) => (
+              <div key={i} className="snow-flake" style={{ left: `${Math.random() * 100}%`, width: `${Math.random() * 4 + 2}px`, height: `${Math.random() * 4 + 2}px`, animationDelay: `${Math.random() * 3}s` }}></div>
+            ))}
+            {weather === 'Clear' && <div className="sun-glare"></div>}
+          </div>
+
           {showToast && (
             <div className="absolute inset-0 z-[120] flex items-center justify-center pointer-events-none">
               <div className="px-10 py-5 rounded-xl bg-black/80 backdrop-blur text-white font-black uppercase tracking-widest border-y-4 border-yellow-400 shadow-[0_0_50px_rgba(251,191,36,0.5)] transform scale-110">
@@ -400,8 +449,15 @@ const App: React.FC = () => {
             </div>
           )}
           <div className="relative w-full flex-1 overflow-hidden">
+            <div className="absolute top-4 left-6 z-50">
+               <div className="bg-black/40 backdrop-blur-sm px-3 py-1 rounded-full border border-white/20 flex items-center gap-2">
+                  <span className="text-[10px] text-white font-black uppercase tracking-widest">Thời tiết:</span>
+                  <span className={`text-[10px] font-black uppercase ${weather === 'Rain' ? 'text-blue-400' : weather === 'Snow' ? 'text-white' : 'text-yellow-400'}`}>{weather}</span>
+               </div>
+            </div>
+            
             <div className="absolute top-12 right-6 sm:right-16 flex flex-col items-end z-20 w-1/2">
-              <div className="info-glass p-3 rounded-xl rounded-br-none border-l-4 border-l-red-500 w-full max-w-[220px] mb-2 shadow-lg">
+              <div className="info-glass p-3 rounded-xl rounded-br-none border-l-4 border-l-red-500 w-full max-w-[220px] mb-2 shadow-lg relative z-30">
                 <div className="flex justify-between items-baseline mb-1">
                   <p className="font-bold text-sm uppercase text-slate-800 tracking-tight font-pixel text-[10px]">{enemy.name}</p>
                   <p className="text-[10px] font-black text-slate-500">Lv {enemy.level}</p>
@@ -412,8 +468,9 @@ const App: React.FC = () => {
                 <div className="flex justify-between mt-1"><p className="text-[9px] text-slate-500 font-bold font-mono ml-auto">{enemy.currentHp}/{enemy.maxHp}</p></div>
               </div>
               <div className="w-32 h-32 sm:w-48 sm:h-48 flex flex-col items-center justify-end relative mr-8">
-                <img src={enemy.img} className={`w-full h-full object-contain pixelated animate-float-enemy drop-shadow-2xl relative z-10 ${enemy.isLegendary ? 'legendary-glow' : ''} ${enemyShaking ? 'shake' : ''}`} style={{ opacity: enemyFainted ? 0 : 1, transform: enemyFainted ? 'scale(0.1) translateY(50px)' : 'none', transition: 'all 0.6s' }} />
-                <div className="shadow-oval"></div>
+                <div className="pokemon-base-circle bottom-0"></div>
+                <img src={enemy.img} className={`w-full h-full object-contain pixelated animate-float-enemy drop-shadow-2xl relative z-10 ${enemy.isLegendary ? 'legendary-glow' : ''} ${enemyShaking ? 'shake' : ''}`} style={{ opacity: enemyFainted ? 0 : 1, transform: enemyFainted ? 'scale(0.1) translateY(50px)' : 'translateY(12px)', transition: 'all 0.6s' }} />
+                <div className="shadow-oval" style={{ bottom: '10px' }}></div>
                 <div className={`absolute inset-0 -top-20 flex items-center justify-center z-50 pointer-events-none ${pokeballAnim ? 'ball-animation' : 'hidden'}`}>
                   <svg className={`w-10 h-10 drop-shadow-xl ${pokeballShake ? 'ball-shake' : ''}`} viewBox="0 0 100 100">
                     <circle cx="50" cy="50" r="48" fill="white" stroke="#1e293b" strokeWidth="4"/>
@@ -425,7 +482,7 @@ const App: React.FC = () => {
               </div>
             </div>
             <div className="absolute bottom-8 left-6 sm:left-16 flex flex-col-reverse items-start z-20 w-1/2">
-              <div className="info-glass p-3 rounded-xl rounded-tl-none border-r-4 border-r-blue-500 w-full max-w-[240px] mt-2 shadow-lg">
+              <div className="info-glass p-3 rounded-xl rounded-tl-none border-r-4 border-r-blue-500 w-full max-w-[240px] mt-2 shadow-lg relative z-30">
                 <div className="flex justify-between items-baseline mb-1">
                   <p className="font-bold text-sm uppercase text-slate-800 tracking-tight font-pixel text-[10px]">{playerTeam[activeIdx].name}</p>
                   <p className="text-[10px] font-black text-blue-600">Lv {playerTeam[activeIdx].level}</p>
@@ -433,7 +490,6 @@ const App: React.FC = () => {
                 <div className="h-3 bg-slate-200 rounded-full overflow-hidden border border-slate-300 mb-1 relative">
                   <div className={`h-full transition-all duration-500 shadow-[0_0_10px_rgba(59,130,246,0.5)] ${(playerTeam[activeIdx].currentHp/playerTeam[activeIdx].maxHp)*100 < 20 ? 'bg-red-500' : (playerTeam[activeIdx].currentHp/playerTeam[activeIdx].maxHp)*100 < 50 ? 'bg-yellow-400' : 'bg-gradient-to-r from-blue-500 to-blue-400'}`} style={{ width: `${(playerTeam[activeIdx].currentHp/playerTeam[activeIdx].maxHp)*100}%` }}></div>
                 </div>
-                {/* THANH EXP ĐƯỢC KHÔI PHỤC Ở ĐÂY */}
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-[8px] font-black text-blue-500 uppercase tracking-tighter">EXP</span>
                   <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden border border-slate-300 shadow-inner">
@@ -445,8 +501,9 @@ const App: React.FC = () => {
                 </div>
               </div>
               <div className="w-40 h-40 sm:w-56 sm:h-56 flex flex-col items-center justify-end relative ml-4 mb-4">
-                <img src={playerTeam[activeIdx].img} className={`w-full h-full object-contain pixelated animate-float-player drop-shadow-2xl relative z-10 ${playerShaking ? 'shake' : ''}`} />
-                <div className="shadow-oval"></div>
+                <div className="pokemon-base-circle bottom-0"></div>
+                <img src={playerTeam[activeIdx].img} className={`w-full h-full object-contain pixelated animate-float-player drop-shadow-2xl relative z-10 ${playerShaking ? 'shake' : ''}`} style={{ transform: 'translateY(12px) scaleX(-1)' }} />
+                <div className="shadow-oval" style={{ bottom: '10px' }}></div>
               </div>
             </div>
           </div>
@@ -471,7 +528,13 @@ const App: React.FC = () => {
               ) : (
                 <>
                   {playerTeam[activeIdx].moves.map(m => (
-                    <button key={m.name} onClick={() => useMove(m)} className={`${moveBorderClass(m.type)} text-white rounded-lg font-black uppercase text-[10px] py-3 active:translate-y-1 active:border-b-0 transition-all shadow-lg text-left pl-3`}>{m.name}</button>
+                    <button key={m.name} onClick={() => useMove(m)} className={`${moveBorderClass(m.type)} text-white rounded-lg font-black uppercase text-[10px] py-3 active:translate-y-1 active:border-b-0 transition-all shadow-lg text-left pl-3`}>
+                      <div className="flex justify-between pr-2">
+                        <span>{m.name}</span>
+                        {/* Hiển thị bonus thời tiết */}
+                        {((weather === 'Rain' && m.type === 'Water') || (weather === 'Snow' && m.type === 'Ice')) && <span className="text-cyan-400">↑</span>}
+                      </div>
+                    </button>
                   ))}
                   <button onClick={() => setBattleView('main')} className="bg-slate-600 col-span-2 text-[9px] h-8 hover:bg-slate-500 text-white rounded-lg font-black uppercase active:translate-y-1 transition-all shadow-lg">QUAY LẠI</button>
                 </>
