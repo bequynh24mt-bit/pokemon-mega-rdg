@@ -9,6 +9,9 @@ const expNeeded = (level: number) => 50 + (level - 1) * 10;
 
 type WeatherType = 'Clear' | 'Rain' | 'Snow';
 
+// Cấu hình tốc độ di chuyển tự động (ms mỗi ô)
+const AUTO_MOVE_SPEED = 200;
+
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>('start');
   const [playerTeam, setPlayerTeam] = useState<PokemonInstance[]>([]);
@@ -16,6 +19,7 @@ const App: React.FC = () => {
   const [enemy, setEnemy] = useState<PokemonInstance | null>(null);
   const [pos, setPos] = useState({ x: 3, y: 4 });
   const [isBusy, setIsBusy] = useState(false);
+  const [isAutoMoving, setIsAutoMoving] = useState(false);
   const [mustSwitch, setMustSwitch] = useState(false);
   const [battleView, setBattleView] = useState<'main' | 'moves'>('main');
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -29,10 +33,35 @@ const App: React.FC = () => {
   const [enemyShaking, setEnemyShaking] = useState(false);
   const [weather, setWeather] = useState<WeatherType>('Clear');
   
+  // State quản lý hướng màn hình cho mobile
+  const [isPortrait, setIsPortrait] = useState(false);
+
   // Ref lưu trữ cấu hình bảo mật từ Backend
   const secureConfig = useRef({ spawnRate: 0.05, buff: 2.0 });
 
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // --- KIỂM TRA HƯỚNG MÀN HÌNH (MOBILE ONLY) ---
+  useEffect(() => {
+    const checkOrientation = () => {
+      // Chỉ áp dụng cho thiết bị di động/màn hình nhỏ
+      const isMobile = window.matchMedia("(max-width: 1024px)").matches;
+      if (isMobile) {
+        setIsPortrait(window.innerHeight > window.innerWidth);
+      } else {
+        setIsPortrait(false);
+      }
+    };
+
+    checkOrientation();
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
+    
+    return () => {
+      window.removeEventListener('resize', checkOrientation);
+      window.removeEventListener('orientationchange', checkOrientation);
+    };
+  }, []);
 
   // --- KẾT NỐI VERCEL BACKEND & BẢO MẬT ---
   useEffect(() => {
@@ -134,27 +163,75 @@ const App: React.FC = () => {
     }, 2200);
   }, [playerTeam, addLog]);
 
+  const isWalkable = (x: number, y: number) => {
+    if (y < 0 || y >= MAP_DATA.length || x < 0 || x >= MAP_DATA[0].length) return false;
+    const tile = MAP_DATA[y][x];
+    return tile === 0 || tile === 1 || tile === 3;
+  };
+
   const move = useCallback((dx: number, dy: number) => {
-    if (gameState !== 'lobby' || isBusy) return;
+    if (gameState !== 'lobby' || isBusy || isAutoMoving) return;
     const nx = pos.x + dx;
     const ny = pos.y + dy;
     
-    // Kiểm tra giới hạn bản đồ
-    if (ny < 0 || ny >= MAP_DATA.length || nx < 0 || nx >= MAP_DATA[0].length) return;
-    
-    const targetTile = MAP_DATA[ny][nx];
-    
-    // Quy tắc va chạm: 0 và 1 có thể đi qua, 2 và 3 bị chặn
-    // Lưu ý: Mặc dù ô 3 là hồi phục, theo yêu cầu "2 or 3 = blocked", nó sẽ chặn bước chân người chơi.
-    if (targetTile === 2 || targetTile === 3) return;
+    if (!isWalkable(nx, ny)) return;
 
     setPos({ x: nx, y: ny });
     
-    // Xử lý sự kiện tại ô cỏ (1)
+    const targetTile = MAP_DATA[ny][nx];
+    if (targetTile === 3) {
+      setPlayerTeam(prev => prev.map(p => ({ ...p, currentHp: p.maxHp })));
+    }
+
     if (targetTile === 1 && Math.random() < 0.15) {
       startBattle();
     }
-  }, [gameState, isBusy, pos, startBattle]);
+  }, [gameState, isBusy, isAutoMoving, pos, startBattle]);
+
+  const findPath = (start: {x: number, y: number}, target: {x: number, y: number}) => {
+    const queue: {x: number, y: number, path: {x: number, y: number}[]}[] = [{...start, path: []}];
+    const visited = new Set([`${start.x},${start.y}`]);
+    const dirs = [{x: 0, y: -1}, {x: 0, y: 1}, {x: -1, y: 0}, {x: 1, y: 0}];
+
+    while (queue.length > 0) {
+      const {x, y, path} = queue.shift()!;
+      if (x === target.x && y === target.y) return path;
+
+      for (const d of dirs) {
+        const nx = x + d.x;
+        const ny = y + d.y;
+        if (isWalkable(nx, ny) && !visited.has(`${nx},${ny}`)) {
+          visited.add(`${nx},${ny}`);
+          queue.push({x: nx, y: ny, path: [...path, {x: nx, y: ny}]});
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleTileClick = async (tx: number, ty: number) => {
+    if (gameState !== 'lobby' || isBusy || isAutoMoving) return;
+    if (tx === pos.x && ty === ty) return;
+
+    const path = findPath(pos, {x: tx, y: ty});
+    if (!path || path.length === 0) return;
+
+    setIsAutoMoving(true);
+    for (const step of path) {
+      if (gameState !== 'lobby') break;
+      setPos(step);
+      const targetTile = MAP_DATA[step.y][step.x];
+      if (targetTile === 3) {
+        setPlayerTeam(prev => prev.map(p => ({ ...p, currentHp: p.maxHp })));
+      }
+      if (targetTile === 1 && Math.random() < 0.15) {
+        startBattle();
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, AUTO_MOVE_SPEED));
+    }
+    setIsAutoMoving(false);
+  };
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -181,6 +258,7 @@ const App: React.FC = () => {
     setMustSwitch(false);
     setEnemyFainted(false);
     setWeather('Clear');
+    setIsAutoMoving(false);
   };
 
   const calculateDamage = (m: Move, attacker: PokemonInstance, isPlayerAttacking: boolean) => {
@@ -337,6 +415,20 @@ const App: React.FC = () => {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
+      {/* PORTRAIT LOCK OVERLAY */}
+      {isPortrait && (
+        <div className="fixed inset-0 z-[1000] bg-slate-950 flex flex-col items-center justify-center p-8 text-center">
+          <div className="w-32 h-32 mb-8 text-yellow-500 phone-rotate-anim">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+              <path d="M12 18h.01" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-black text-white mb-4 uppercase tracking-tighter">Vui lòng xoay ngang điện thoại</h2>
+          <p className="text-slate-400 font-bold text-sm max-w-xs leading-relaxed uppercase tracking-widest">Trải nghiệm Ace System tốt nhất ở chế độ nằm ngang (Landscape)</p>
+        </div>
+      )}
+
       {gameState === 'start' && (
         <div className="min-h-screen flex flex-col items-center justify-center text-white p-6 bg-slate-900 relative overflow-hidden">
           <div className="absolute inset-0 opacity-10 pointer-events-none">
@@ -374,10 +466,14 @@ const App: React.FC = () => {
               {MAP_DATA.map((row, y) => (
                 <div key={y} className="flex">
                   {row.map((cell, x) => (
-                    <div key={`${x}-${y}`} className={`w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center relative ${cell === 1 ? 'grass-tile' : cell === 2 ? 'wall-tile' : cell === 3 ? 'heal-tile' : 'path-tile'}`}>
+                    <div 
+                      key={`${x}-${y}`} 
+                      onClick={() => handleTileClick(x, y)}
+                      className={`w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center relative cursor-pointer hover:brightness-125 active:brightness-90 transition-all ${cell === 1 ? 'grass-tile' : cell === 2 ? 'wall-tile' : cell === 3 ? 'heal-tile' : 'path-tile'}`}
+                    >
                       {cell === 3 && <span className="text-lg drop-shadow-md animate-pulse">❤️</span>}
                       {pos.x === x && pos.y === y && (
-                        <div className="w-6 h-6 bg-red-500 rounded-full border-2 border-white shadow-[0_0_10px_rgba(239,68,68,0.8)] z-10 transition-all duration-200">
+                        <div className="w-6 h-6 bg-red-500 rounded-full border-2 border-white shadow-[0_0_10px_rgba(239,68,68,0.8)] z-10 transition-all duration-300 ease-in-out">
                           <div className="w-full h-1/2 bg-white rounded-t-full opacity-30"></div>
                         </div>
                       )}
