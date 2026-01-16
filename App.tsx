@@ -7,7 +7,7 @@ const randInt = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const expNeeded = (level: number) => 50 + (level - 1) * 10;
 
-type WeatherType = 'Clear' | 'Rain' | 'Snow';
+type WeatherType = 'Clear' | 'Rain' | 'Snow' | 'Fog';
 
 // Cấu hình tốc độ di chuyển tự động (ms mỗi ô)
 const AUTO_MOVE_SPEED = 200;
@@ -41,10 +41,20 @@ const App: React.FC = () => {
 
   const logsEndRef = useRef<HTMLDivElement>(null);
 
+  // --- HỆ THỐNG CẢNH BÁO AN TOÀN ---
+  useEffect(() => {
+    const warning = `
+      [ CẢNH BÁO HỆ THỐNG ACE ]
+      - Không được phép sửa đổi giao diện hoặc logic game.
+      - Mọi hành vi can thiệp vào mã nguồn sẽ khiến dữ liệu bị xóa sạch.
+      - Game được tối ưu hóa cho mục đích trải nghiệm nguyên bản.
+    `;
+    console.warn("%c" + warning, "color: yellow; font-size: 14px; font-weight: bold; background: black; padding: 10px; border: 2px solid red;");
+  }, []);
+
   // --- KIỂM TRA HƯỚNG MÀN HÌNH (MOBILE ONLY) ---
   useEffect(() => {
     const checkOrientation = () => {
-      // Chỉ áp dụng cho thiết bị di động/màn hình nhỏ
       const isMobile = window.matchMedia("(max-width: 1024px)").matches;
       if (isMobile) {
         setIsPortrait(window.innerHeight > window.innerWidth);
@@ -86,7 +96,6 @@ const App: React.FC = () => {
         window.location.href = "about:blank";
       }
       const s = Date.now();
-      debugger;
       if (Date.now() - s > 100) window.location.href = "about:blank";
     };
     
@@ -109,16 +118,15 @@ const App: React.FC = () => {
 
   const createInstance = (template: PokemonTemplate, level = 5, noLegendaryBuff = false): PokemonInstance => {
     const isLegendary = !!template.isLegendary;
-    let hp = Math.floor(template.maxHp * (1 + level / 20) + level * 2);
-    let atk = Math.floor(template.atk * (1 + level / 50));
-
+    const startLevel = isLegendary ? Math.min(level, 30) : level;
+    let hp = Math.floor(template.maxHp * (1 + startLevel / 20) + startLevel * 2);
+    let atk = Math.floor(template.atk * (1 + startLevel / 50));
     if (isLegendary && !noLegendaryBuff) {
       const b = secureConfig.current.buff;
       hp = Math.floor(hp * b);
       atk = Math.floor(atk * b);
     }
-
-    return { ...template, level, maxHp: hp, currentHp: hp, baseAtk: atk, exp: 0, uid: Math.random() };
+    return { ...template, level: startLevel, maxHp: hp, currentHp: hp, baseAtk: atk, exp: 0, uid: Math.random() };
   };
 
   const selectStarter = (s: PokemonTemplate) => {
@@ -132,17 +140,17 @@ const App: React.FC = () => {
     let t: PokemonTemplate;
     let enemyLevel: number;
 
-    const weathers: WeatherType[] = ['Clear', 'Rain', 'Snow'];
+    const weathers: WeatherType[] = ['Clear', 'Rain', 'Snow', 'Fog'];
     const newWeather = weathers[Math.floor(Math.random() * weathers.length)];
     setWeather(newWeather);
 
     if (isLegend) {
       t = POKEMON_DB.legendary[Math.floor(Math.random() * POKEMON_DB.legendary.length)];
-      enemyLevel = maxPlayerLv + 10;
+      enemyLevel = Math.min(maxPlayerLv + 10, 30);
     } else {
       t = POKEMON_DB.wild[Math.floor(Math.random() * POKEMON_DB.wild.length)];
       const avgLv = Math.floor(playerTeam.reduce((acc, p) => acc + p.level, 0) / playerTeam.length);
-      enemyLevel = clamp(avgLv + randInt(-1, 1), 1, 20);
+      enemyLevel = clamp(avgLv + randInt(-1, 1), 1, 100);
     }
 
     const newEnemy = createInstance(t, enemyLevel);
@@ -158,8 +166,9 @@ const App: React.FC = () => {
     setTimeout(() => {
       setGameState('battle');
       addLog(newEnemy.isLegendary ? `⚠ CẢNH BÁO: PHÁT HIỆN ${newEnemy.name} HUYỀN THOẠI!` : `Một ${newEnemy.name} hoang dã xuất hiện!`);
-      if (newWeather === 'Rain') addLog("Trời bắt đầu đổ mưa...");
-      if (newWeather === 'Snow') addLog("Một trận bão tuyết đang thổi tới...");
+      if (newWeather === 'Rain') addLog("Trời bắt đầu đổ mưa... Sức mạnh hệ Nước tăng cao!");
+      if (newWeather === 'Snow') addLog("Một trận bão tuyết đang thổi tới... Độ chính xác bị giảm!");
+      if (newWeather === 'Fog') addLog("Sương mù bao phủ chiến trường... Các đòn tấn công từ xa bị yếu đi!");
     }, 2200);
   }, [playerTeam, addLog]);
 
@@ -173,16 +182,12 @@ const App: React.FC = () => {
     if (gameState !== 'lobby' || isBusy || isAutoMoving) return;
     const nx = pos.x + dx;
     const ny = pos.y + dy;
-    
     if (!isWalkable(nx, ny)) return;
-
     setPos({ x: nx, y: ny });
-    
     const targetTile = MAP_DATA[ny][nx];
     if (targetTile === 3) {
       setPlayerTeam(prev => prev.map(p => ({ ...p, currentHp: p.maxHp })));
     }
-
     if (targetTile === 1 && Math.random() < 0.15) {
       startBattle();
     }
@@ -192,11 +197,9 @@ const App: React.FC = () => {
     const queue: {x: number, y: number, path: {x: number, y: number}[]}[] = [{...start, path: []}];
     const visited = new Set([`${start.x},${start.y}`]);
     const dirs = [{x: 0, y: -1}, {x: 0, y: 1}, {x: -1, y: 0}, {x: 1, y: 0}];
-
     while (queue.length > 0) {
       const {x, y, path} = queue.shift()!;
       if (x === target.x && y === target.y) return path;
-
       for (const d of dirs) {
         const nx = x + d.x;
         const ny = y + d.y;
@@ -211,11 +214,9 @@ const App: React.FC = () => {
 
   const handleTileClick = async (tx: number, ty: number) => {
     if (gameState !== 'lobby' || isBusy || isAutoMoving) return;
-    if (tx === pos.x && ty === ty) return;
-
+    if (tx === pos.x && ty === pos.y) return;
     const path = findPath(pos, {x: tx, y: ty});
     if (!path || path.length === 0) return;
-
     setIsAutoMoving(true);
     for (const step of path) {
       if (gameState !== 'lobby') break;
@@ -263,9 +264,13 @@ const App: React.FC = () => {
 
   const calculateDamage = (m: Move, attacker: PokemonInstance, isPlayerAttacking: boolean) => {
     let pwr = m.pwr;
-    if (weather === 'Rain' && m.type === 'Water') pwr *= 1.2;
+    if (weather === 'Rain') {
+      if (m.type === 'Water') pwr *= 1.2;
+      if (m.type === 'Fire') pwr *= 0.8;
+    }
     if (weather === 'Snow' && m.type === 'Ice') pwr *= 1.2;
     if (weather === 'Clear' && m.type === 'Fire') pwr *= 1.1;
+    if (weather === 'Fog' && m.pwr > 70) pwr *= 0.8; // Chiêu thức mạnh tầm xa bị cản trở bởi sương mù
 
     const baseDmg = Math.floor((pwr / 5) * (attacker.level / 5) + (attacker.baseAtk / 18));
     return Math.max(1, isPlayerAttacking ? baseDmg + 5 : baseDmg);
@@ -276,8 +281,13 @@ const App: React.FC = () => {
     const m = currentEnemy.moves[Math.floor(Math.random() * currentEnemy.moves.length)];
     addLog(`${currentEnemy.name} sử dụng ${m.name}!`, 'enemy');
     
-    if (weather === 'Snow' && Math.random() < 0.1) {
-      addLog("Nhưng chiêu thức đã bị hụt do bão tuyết!", 'system');
+    // Check hụt chiêu dựa trên thời tiết
+    let missChance = 0;
+    if (weather === 'Snow') missChance = 0.15;
+    if (weather === 'Fog') missChance = 0.20;
+
+    if (Math.random() < missChance) {
+      addLog(`Nhưng chiêu thức đã bị hụt do ${weather === 'Snow' ? 'bão tuyết' : 'sương mù'}!`, 'system');
       return;
     }
 
@@ -309,6 +319,20 @@ const App: React.FC = () => {
     const p = playerTeam[activeIdx];
     addLog(`${p.name} dùng chiêu ${m.name}!`, 'player');
     
+    // Check hụt chiêu cho player
+    let missChance = 0;
+    if (weather === 'Snow') missChance = 0.05;
+    if (weather === 'Fog') missChance = 0.10;
+
+    if (Math.random() < missChance) {
+      addLog(`Chiêu thức của ${p.name} đã bị hụt!`, 'system');
+      await new Promise(r => setTimeout(r, 600));
+      await enemyTurn(enemy, p);
+      setIsBusy(false);
+      setBattleView('main');
+      return;
+    }
+
     setEnemyShaking(true);
     const dmg = calculateDamage(m, p, true);
     const newEnemyHp = Math.max(0, enemy.currentHp - dmg);
@@ -326,14 +350,28 @@ const App: React.FC = () => {
       setPlayerTeam(prev => {
         const next = [...prev];
         const pk = next[activeIdx];
-        pk.exp += gain;
-        while (pk.exp >= expNeeded(pk.level)) {
-          pk.exp -= expNeeded(pk.level);
-          pk.level++;
-          pk.maxHp += 10;
-          pk.baseAtk += 2;
-          pk.currentHp = pk.maxHp;
-          addLog(`🌟 CHÚC MỪNG! ${pk.name} lên cấp ${pk.level}!`, 'system');
+        if (pk.isLegendary && pk.level >= 30) {
+          addLog(`${pk.name} đã đạt cấp độ tối đa (30)!`, 'system');
+          pk.exp = 0;
+        } else {
+          pk.exp += gain;
+          while (pk.exp >= expNeeded(pk.level)) {
+            if (pk.isLegendary && pk.level >= 30) {
+              pk.exp = 0;
+              break;
+            }
+            pk.exp -= expNeeded(pk.level);
+            pk.level++;
+            pk.maxHp += 10;
+            pk.baseAtk += 2;
+            pk.currentHp = pk.maxHp;
+            addLog(`🌟 CHÚC MỪNG! ${pk.name} lên cấp ${pk.level}!`, 'system');
+            if (pk.isLegendary && pk.level >= 30) {
+               addLog(`${pk.name} đã chạm ngưỡng sức mạnh tối đa!`, 'system');
+               pk.exp = 0;
+               break;
+            }
+          }
         }
         return next;
       });
@@ -369,7 +407,11 @@ const App: React.FC = () => {
     if (Math.random() < rate) {
       addLog(`Gotcha! ${enemy.name} đã bị thu phục!`, 'system');
       setShowToast(true);
-      setPlayerTeam(prev => [...prev, { ...enemy, currentHp: enemy.maxHp, uid: Math.random() }]);
+      const capturedEnemy = { ...enemy, currentHp: enemy.maxHp, uid: Math.random() };
+      if (capturedEnemy.isLegendary && capturedEnemy.level > 30) {
+        capturedEnemy.level = 30;
+      }
+      setPlayerTeam(prev => [...prev, capturedEnemy]);
       setTimeout(() => setShowToast(false), 1500);
       setTimeout(() => endBattle(false), 1200);
     } else {
@@ -443,7 +485,7 @@ const App: React.FC = () => {
               <circle cx="50" cy="50" r="8" fill="white" className="animate-pulse"/>
             </svg>
           </div>
-          <h1 className="text-5xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 to-yellow-600 drop-shadow-sm uppercase text-center font-pixel tracking-tighter">ACE SYSTEM</h1>
+          <h1 className="text-5xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 to-yellow-600 drop-shadow-sm uppercase text-center font-pixel tracking-tighter text-[40px]">ACE SYSTEM</h1>
           <p className="mb-12 text-xs text-slate-400 uppercase tracking-[0.5em] font-bold">Phiên bản Remastered</p>
           <div className="flex flex-wrap justify-center gap-6 relative z-10">
             {POKEMON_DB.starters.map(s => (
@@ -523,17 +565,18 @@ const App: React.FC = () => {
       )}
 
       {gameState === 'battle' && enemy && (
-        <div className="fixed inset-0 battle-bg z-[80] flex flex-col">
+        <div className={`fixed inset-0 battle-bg z-[80] flex flex-col ${weather === 'Rain' ? 'brightness-[0.8] saturate-[1.2]' : weather === 'Fog' ? 'brightness-[0.9]' : ''}`}>
           <div className="battle-field-ground"></div>
           <div className={`absolute inset-0 pointer-events-none z-50 ${battleFlash ? 'flash-red' : ''}`}></div>
           
           <div className="weather-layer">
-            {weather === 'Rain' && Array.from({ length: 40 }).map((_, i) => (
-              <div key={i} className="rain-drop" style={{ left: `${Math.random() * 100}%`, animationDelay: `${Math.random() * 1}s`, opacity: Math.random() }}></div>
+            {weather === 'Rain' && Array.from({ length: 60 }).map((_, i) => (
+              <div key={i} className="rain-drop" style={{ left: `${Math.random() * 110 - 5}%`, animationDelay: `${Math.random() * 1}s`, opacity: Math.random() }}></div>
             ))}
-            {weather === 'Snow' && Array.from({ length: 30 }).map((_, i) => (
-              <div key={i} className="snow-flake" style={{ left: `${Math.random() * 100}%`, width: `${Math.random() * 4 + 2}px`, height: `${Math.random() * 4 + 2}px`, animationDelay: `${Math.random() * 3}s` }}></div>
+            {weather === 'Snow' && Array.from({ length: 40 }).map((_, i) => (
+              <div key={i} className="snow-flake" style={{ left: `${Math.random() * 100}%`, width: `${Math.random() * 5 + 3}px`, height: `${Math.random() * 5 + 3}px`, animationDelay: `${Math.random() * 3}s` }}></div>
             ))}
+            {weather === 'Fog' && <div className="fog-layer fog-active"></div>}
             {weather === 'Clear' && <div className="sun-glare"></div>}
           </div>
 
@@ -548,7 +591,7 @@ const App: React.FC = () => {
             <div className="absolute top-4 left-6 z-50">
                <div className="bg-black/40 backdrop-blur-sm px-3 py-1 rounded-full border border-white/20 flex items-center gap-2">
                   <span className="text-[10px] text-white font-black uppercase tracking-widest">Thời tiết:</span>
-                  <span className={`text-[10px] font-black uppercase ${weather === 'Rain' ? 'text-blue-400' : weather === 'Snow' ? 'text-white' : 'text-yellow-400'}`}>{weather}</span>
+                  <span className={`text-[10px] font-black uppercase ${weather === 'Rain' ? 'text-blue-400' : weather === 'Snow' ? 'text-white' : weather === 'Fog' ? 'text-gray-300' : 'text-yellow-400'}`}>{weather === 'Fog' ? 'Sương mù' : weather === 'Rain' ? 'Mưa' : weather === 'Snow' ? 'Tuyết' : 'Nắng'}</span>
                </div>
             </div>
             
@@ -565,7 +608,7 @@ const App: React.FC = () => {
               </div>
               <div className="w-32 h-32 sm:w-48 sm:h-48 flex flex-col items-center justify-end relative mr-8">
                 <div className="pokemon-base-circle bottom-0"></div>
-                <img src={enemy.img} className={`w-full h-full object-contain pixelated animate-float-enemy drop-shadow-2xl relative z-10 ${enemy.isLegendary ? 'legendary-glow' : ''} ${enemyShaking ? 'shake' : ''}`} style={{ opacity: enemyFainted ? 0 : 1, transform: enemyFainted ? 'scale(0.1) translateY(50px)' : 'translateY(12px)', transition: 'all 0.6s' }} />
+                <img src={enemy.img} className={`w-full h-full object-contain pixelated drop-shadow-2xl relative z-10 ${enemy.isLegendary ? 'legendary-glow' : ''} ${enemyShaking ? 'shake' : 'animate-float-enemy'}`} style={{ opacity: enemyFainted ? 0 : 1, transform: enemyFainted ? 'scale(0.1) translateY(50px)' : 'translateY(12px)', transition: 'all 0.6s' }} />
                 <div className="shadow-oval" style={{ bottom: '10px' }}></div>
                 <div className={`absolute inset-0 -top-20 flex items-center justify-center z-50 pointer-events-none ${pokeballAnim ? 'ball-animation' : 'hidden'}`}>
                   <svg className={`w-10 h-10 drop-shadow-xl ${pokeballShake ? 'ball-shake' : ''}`} viewBox="0 0 100 100">
@@ -598,7 +641,7 @@ const App: React.FC = () => {
               </div>
               <div className="w-40 h-40 sm:w-56 sm:h-56 flex flex-col items-center justify-end relative ml-4 mb-4">
                 <div className="pokemon-base-circle bottom-0"></div>
-                <img src={playerTeam[activeIdx].img} className={`w-full h-full object-contain pixelated animate-float-player drop-shadow-2xl relative z-10 ${playerShaking ? 'shake' : ''}`} style={{ transform: 'translateY(12px) scaleX(-1)' }} />
+                <img src={playerTeam[activeIdx].img} className={`w-full h-full object-contain pixelated drop-shadow-2xl relative z-10 ${playerShaking ? 'shake' : 'animate-float-player'}`} style={{ transform: 'translateY(12px) scaleX(-1)' }} />
                 <div className="shadow-oval" style={{ bottom: '10px' }}></div>
               </div>
             </div>
@@ -653,6 +696,8 @@ const App: React.FC = () => {
               const isAce = i === 0;
               const isFainted = p.currentHp <= 0;
               const isCurrentlyInBattle = i === activeIdx && gameState === 'battle';
+              const isLegendary = !!p.isLegendary;
+
               return (
                 <div key={p.uid} onClick={() => {
                   if (gameState === 'battle') {
@@ -676,16 +721,18 @@ const App: React.FC = () => {
                   </div>
                   <div className="flex-1">
                     <div className="flex justify-between items-center">
-                      <p className={`font-black uppercase ${isAce ? 'text-yellow-400' : 'text-slate-100'} text-xs`}>{p.name}</p>
-                      <p className="text-[9px] font-black text-slate-500">LV {p.level}</p>
+                      <div className="flex items-center gap-2">
+                        <p className={`font-black uppercase ${isAce ? 'text-yellow-400' : 'text-slate-100'} text-xs`}>{p.name}</p>
+                        {isLegendary && <span className="bg-amber-600 text-white text-[8px] px-1 rounded font-black">LEGEND</span>}
+                      </div>
+                      <p className="text-[9px] font-black text-slate-500">LV {p.level}{isLegendary && p.level >= 30 ? '/30 (MAX)' : ''}</p>
                     </div>
                     <div className="h-2 bg-slate-900 rounded-full mt-2 overflow-hidden border border-white/5">
                       <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all" style={{ width: `${(p.currentHp / p.maxHp) * 100}%` }}></div>
                     </div>
-                    {/* EXP TRONG MENU ĐỘI HÌNH */}
                     <div className="flex items-center gap-1.5 mt-2">
                        <div className="flex-1 h-1 bg-slate-700 rounded-full overflow-hidden">
-                         <div className="h-full bg-blue-500" style={{ width: `${Math.floor((p.exp / expNeeded(p.level)) * 100)}%` }}></div>
+                         <div className="h-full bg-blue-500" style={{ width: `${(isLegendary && p.level >= 30) ? 100 : Math.floor((p.exp / expNeeded(p.level)) * 100)}%` }}></div>
                        </div>
                        <span className="text-[7px] text-slate-500 font-bold uppercase">EXP</span>
                     </div>

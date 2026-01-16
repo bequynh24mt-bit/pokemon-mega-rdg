@@ -102,6 +102,7 @@
             background: linear-gradient(to bottom, #74b9ff 0%, #a29bfe 50%, #55efc4 50%, #00b894 100%);
             position: relative;
             overflow: hidden;
+            transition: filter 1s ease;
         }
 
         .battle-field-ground {
@@ -163,6 +164,16 @@
         @keyframes snow-fall {
             to { transform: translateY(100vh) translateX(30px) rotate(360deg); }
         }
+
+        .fog-layer {
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            transition: opacity 2s ease;
+        }
+        .fog-active { opacity: 1; }
 
         .sun-glare {
             position: absolute;

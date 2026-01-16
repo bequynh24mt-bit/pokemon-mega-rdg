@@ -26,6 +26,27 @@ export const POKEMON_DB = {
       ] }
   ],
   wild: [
+    { id: 4, name: 'Charmander', type: 'Fire', maxHp: 39, atk: 52, img: `${SPRITE_BASE}4.png`, 
+      moves: [
+        {name: 'Scratch', pwr: 40, type: 'Normal'},
+        {name: 'Ember', pwr: 40, type: 'Fire'},
+        {name: 'Flame Burst', pwr: 70, type: 'Fire'},
+        {name: 'Fire Spin', pwr: 35, type: 'Fire'}
+      ] },
+    { id: 1, name: 'Bulbasaur', type: 'Grass', maxHp: 45, atk: 49, img: `${SPRITE_BASE}1.png`, 
+      moves: [
+        {name: 'Tackle', pwr: 40, type: 'Normal'},
+        {name: 'Vine Whip', pwr: 45, type: 'Grass'},
+        {name: 'Razor Leaf', pwr: 55, type: 'Grass'},
+        {name: 'Seed Bomb', pwr: 80, type: 'Grass'}
+      ] },
+    { id: 7, name: 'Squirtle', type: 'Water', maxHp: 44, atk: 48, img: `${SPRITE_BASE}7.png`, 
+      moves: [
+        {name: 'Tackle', pwr: 40, type: 'Normal'},
+        {name: 'Water Gun', pwr: 40, type: 'Water'},
+        {name: 'Bubble Beam', pwr: 65, type: 'Water'},
+        {name: 'Bite', pwr: 60, type: 'Dark'}
+      ] },
     { id: 16, name: 'Pidgey', type: 'Flying', maxHp: 40, atk: 45, img: `${SPRITE_BASE}16.png`, moves: [
       {name: 'Gust', pwr: 40, type: 'Flying'},
       {name: 'Quick Attack', pwr: 40, type: 'Normal'},
