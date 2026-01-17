@@ -3,14 +3,12 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { POKEMON_DB, MAP_DATA } from './constants';
 import { PokemonInstance, PokemonTemplate, GameState, LogEntry, Move } from './types';
 
-// Các hàm tiện ích an toàn
+// Các hàm tiện ích
 const randInt = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)) + a;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const expNeeded = (level: number) => 50 + (level - 1) * 10;
 
 type WeatherType = 'Clear' | 'Rain' | 'Snow' | 'Fog';
-
-// Cấu hình tốc độ di chuyển tự động (ms mỗi ô)
 const AUTO_MOVE_SPEED = 200;
 
 const App: React.FC = () => {
@@ -33,9 +31,37 @@ const App: React.FC = () => {
   const [playerShaking, setPlayerShaking] = useState(false);
   const [enemyShaking, setEnemyShaking] = useState(false);
   const [weather, setWeather] = useState<WeatherType>('Clear');
-  
-  // State quản lý hướng màn hình cho mobile
   const [isPortrait, setIsPortrait] = useState(false);
+
+  useEffect(() => {
+    // Chỉ kích hoạt bảo vệ khi game đã bắt đầu (vượt qua màn hình start)
+    if (gameState === 'start') return;
+
+    const handleForceQuit = () => {
+      // Sử dụng replace để người chơi không thể nhấn nút "Back" quay lại
+      window.location.replace("about:blank");
+    };
+
+    // 1. Phát hiện chuyển Tab hoặc Minimize (Visibility API)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        handleForceQuit();
+      }
+    };
+
+    // 2. Phát hiện Click ra ngoài cửa sổ, Alt+Tab, mở DevTools (Window Blur)
+    const handleBlur = () => {
+      handleForceQuit();
+    };
+
+    window.addEventListener('blur', handleBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('blur', handleBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [gameState]);
 
   // Ref lưu trữ cấu hình bảo mật từ Backend
   const secureConfig = useRef({ spawnRate: 0.05, buff: 2.0 });
@@ -74,7 +100,7 @@ const App: React.FC = () => {
       
       if (widthThreshold || heightThreshold) {
         // Redirect người dùng nếu phát hiện can thiệp
-        window.location.href = "https://www.google.com"; 
+        window.location.href = "https://www.sumysumy.com"; 
       }
     };
 
