@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { POKEMON_DB, MAP_DATA } from './constants';
 import { PokemonInstance, PokemonTemplate, GameState, LogEntry, Move } from './types';
@@ -40,6 +41,65 @@ const App: React.FC = () => {
   const secureConfig = useRef({ spawnRate: 0.05, buff: 2.0 });
 
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // --- HỆ THỐNG BẢO MẬT NÂNG CAO (ANTI-DEVTOOLS) ---
+  useEffect(() => {
+    // Chỉ kích hoạt bảo mật khi không phải môi trường phát triển (localhost)
+    const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (isDev) return;
+
+    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Chặn F12
+      if (e.key === 'F12') {
+        e.preventDefault();
+        return false;
+      }
+      // Chặn Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C
+      if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) {
+        e.preventDefault();
+        return false;
+      }
+      // Chặn Ctrl+U (Xem nguồn trang)
+      if (e.ctrlKey && e.key === 'u') {
+        e.preventDefault();
+        return false;
+      }
+    };
+
+    // Phát hiện DevTools dựa trên kích thước cửa sổ (Dành cho Desktop)
+    const detectDevTools = () => {
+      const widthThreshold = window.outerWidth - window.innerWidth > 160;
+      const heightThreshold = window.outerHeight - window.innerHeight > 160;
+      
+      if (widthThreshold || heightThreshold) {
+        // Redirect người dùng nếu phát hiện can thiệp
+        window.location.href = "https://www.google.com"; 
+      }
+    };
+
+    // Bẫy Debugger: Làm chậm trình duyệt nếu DevTools mở
+    const debuggerTrap = () => {
+      const start = Date.now();
+      debugger; // Lệnh này chỉ kích hoạt khi DevTools mở
+      const end = Date.now();
+      if (end - start > 100) {
+        window.location.href = "https://www.google.com";
+      }
+    };
+
+    window.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('keydown', handleKeyDown);
+    const itvDetect = setInterval(detectDevTools, 2000);
+    const itvTrap = setInterval(debuggerTrap, 1000);
+
+    return () => {
+      window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+      clearInterval(itvDetect);
+      clearInterval(itvTrap);
+    };
+  }, []);
 
   // --- HỆ THỐNG CẢNH BÁO AN TOÀN ---
   useEffect(() => {
@@ -90,20 +150,12 @@ const App: React.FC = () => {
       }
     };
     fetchConfig();
-
-    const protect = () => {
-      if (window.outerWidth - window.innerWidth > 160 || window.outerHeight - window.innerHeight > 160) {
-        window.location.href = "about:blank";
-      }
-      const s = Date.now();
-      if (Date.now() - s > 100) window.location.href = "about:blank";
-    };
     
-    const itv = setInterval(protect, 1000);
     const _n = () => {};
-    console.log = _n; console.warn = _n; console.error = _n; console.table = _n;
-    
-    return () => clearInterval(itv);
+    // Ghi đè các hàm console để ngăn chặn log
+    if (window.location.hostname !== 'localhost') {
+      console.log = _n; console.warn = _n; console.error = _n; console.table = _n;
+    }
   }, []);
 
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'normal') => {
@@ -470,6 +522,13 @@ const App: React.FC = () => {
           <p className="text-slate-400 font-bold text-sm max-w-xs leading-relaxed uppercase tracking-widest">Trải nghiệm Ace System tốt nhất ở chế độ nằm ngang (Landscape)</p>
         </div>
       )}
+
+      {/* WARNING OVERLAY (ONLY DESKTOP) */}
+      <div className="hidden lg:block fixed top-2 left-1/2 -translate-x-1/2 z-[300] pointer-events-none">
+        <div className="px-4 py-1 bg-red-600/20 backdrop-blur-sm border border-red-600/40 rounded-full text-[9px] text-red-200 font-black uppercase tracking-widest">
+           ⚠ HỆ THỐNG GIÁM SÁT: CẤM THAY ĐỔI GIAO DIỆN & LOGIC
+        </div>
+      </div>
 
       {gameState === 'start' && (
         <div className="min-h-screen flex flex-col items-center justify-center text-white p-6 bg-slate-900 relative overflow-hidden">
