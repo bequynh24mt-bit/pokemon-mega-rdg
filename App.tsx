@@ -3,100 +3,15 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { POKEMON_DB, MAP_DATA } from './constants';
 import { PokemonInstance, PokemonTemplate, GameState, LogEntry, Move } from './types';
 
-/** 
- * ==========================================================================================
- * ADVANCED NATIVE RNG PROTECTION ENGINE - SECURITY CORE V3
- * ==========================================================================================
- * Hệ thống giám sát tầng sâu bảo vệ hàm Math.random() khỏi các script can thiệp.
- */
-
-// Lưu trữ bản tham chiếu Native ngay khi script được tải
-const __ORIGINAL_MATH_RANDOM__ = Math.random;
-const __NATIVE_FUNCTION_STRING__ = Math.random.toString();
-
-/**
- * Kiểm tra tính nguyên bản của RNG thông qua kiểm tra chuỗi hàm và tính biến thiên.
- */
-const isRngValid = (): boolean => {
-  try {
-    const currentRandom = Math.random;
-    
-    // 1. Kiểm tra mã nguồn native
-    if (currentRandom.toString() !== __NATIVE_FUNCTION_STRING__) return false;
-    
-    // 2. Kiểm tra tính ngẫu nhiên cơ bản (Chống lại việc gán hằng số)
-    const samples = [currentRandom(), currentRandom(), currentRandom(), currentRandom()];
-    const allSame = samples.every(v => v === samples[0]);
-    if (allSame) return false;
-
-    // 3. Kiểm tra các trường hợp cực đoan như trả về 0 liên tục
-    if (samples.every(v => v === 0)) return false;
-
-    return true;
-  } catch (e) {
-    return false;
-  }
-};
-
-/**
- * Thực hiện khôi phục cưỡng bức Math.random về native code.
- */
-const emergencyRngRestore = () => {
-  try {
-    // Sử dụng Object.defineProperty để thử khóa thuộc tính
-    Object.defineProperty(Math, 'random', {
-      value: __ORIGINAL_MATH_RANDOM__,
-      writable: false,
-      configurable: true,
-      enumerable: false
-    });
-  } catch (e) {
-    // Dự phòng gán trực tiếp
-    Math.random = __ORIGINAL_MATH_RANDOM__;
-  }
-};
-
-/**
- * Vòng lặp giám sát Heartbeat - Chạy độc lập với React Lifecycle
- */
-setInterval(() => {
-  if (!isRngValid()) {
-    emergencyRngRestore();
-    // Ghi nhận cảnh báo ngầm (chỉ hiện ở local)
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      console.warn("[ACE-SECURITY] RNG Tampering detected. Native function restored immediately.");
-    }
-  }
-}, 100);
-
-// --- HÀM TIỆN ÍCH TOÁN HỌC AN TOÀN ---
+// Các hàm tiện ích
 const randInt = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)) + a;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-const expNeeded = (level: number) => 50 + (level - 1) * 15;
-
-/**
- * ĐỊNH NGHĨA HẰNG SỐ HỆ THỐNG
- */
-const SYSTEM_CONSTANTS = {
-  AUTO_MOVE_DELAY: 180,
-  BATTLE_START_DELAY: 2200,
-  BALL_ANIM_MS: 850,
-  TEAM_LIMIT: 6,
-  LEVEL_LIMIT: 100,
-  LEGENDARY_LEVEL_LIMIT: 35,
-  BASE_SPAWN_CHANCE: 0.15,
-  HEAL_TILE: 3,
-  GRASS_TILE: 1,
-  WALL_TILE: 2
-};
+const expNeeded = (level: number) => 50 + (level - 1) * 10;
 
 type WeatherType = 'Clear' | 'Rain' | 'Snow' | 'Fog';
+const AUTO_MOVE_SPEED = 200;
 
-/**
- * COMPONENT CHÍNH - APP ENGINE
- */
 const App: React.FC = () => {
-  // --- STATE HOOKS ---
   const [gameState, setGameState] = useState<GameState>('start');
   const [playerTeam, setPlayerTeam] = useState<PokemonInstance[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -118,121 +33,114 @@ const App: React.FC = () => {
   const [weather, setWeather] = useState<WeatherType>('Clear');
   const [isPortrait, setIsPortrait] = useState(false);
 
-  // --- REFS ---
-  const dynamicConfig = useRef({ spawnRate: 0.05, powerMultiplier: 2.0 });
-  const logsScrollRef = useRef<HTMLDivElement>(null);
-  const mainContainerRef = useRef<HTMLDivElement>(null);
-
-  /**
-   * ==========================================================================================
-   * SECURITY LAYER: FORCE-QUIT ON BLUR / HIDE
-   * ==========================================================================================
-   */
   useEffect(() => {
-    // Không kích hoạt khi đang ở màn hình khởi đầu
+    // Chỉ kích hoạt bảo vệ khi game đã bắt đầu (vượt qua màn hình start)
     if (gameState === 'start') return;
 
-    const executeForceQuit = () => {
-      // Xóa sạch dấu vết và thoát về trang trống
+    const handleForceQuit = () => {
+      // Sử dụng replace để người chơi không thể nhấn nút "Back" quay lại
       window.location.replace("about:blank");
     };
 
-    const onVisibilityAction = () => {
+    // 1. Phát hiện chuyển Tab hoặc Minimize (Visibility API)
+    const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        executeForceQuit();
+        handleForceQuit();
       }
     };
 
-    const onWindowBlur = () => {
-      executeForceQuit();
+    // 2. Phát hiện Click ra ngoài cửa sổ, Alt+Tab, mở DevTools (Window Blur)
+    const handleBlur = () => {
+      handleForceQuit();
     };
 
-    window.addEventListener('blur', onWindowBlur);
-    document.addEventListener('visibilitychange', onVisibilityAction);
+    window.addEventListener('blur', handleBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      window.removeEventListener('blur', onWindowBlur);
-      document.removeEventListener('visibilitychange', onVisibilityAction);
+      window.removeEventListener('blur', handleBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [gameState]);
 
-  /**
-   * ==========================================================================================
-   * SECURITY LAYER: DEVTOOLS DEFENSE
-   * ==========================================================================================
-   */
+  // Ref lưu trữ cấu hình bảo mật từ Backend
+  const secureConfig = useRef({ spawnRate: 0.05, buff: 2.0 });
+
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // --- HỆ THỐNG BẢO MẬT NÂNG CAO (ANTI-DEVTOOLS) ---
   useEffect(() => {
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    if (isLocal) return;
+    // Chỉ kích hoạt bảo mật khi không phải môi trường phát triển (localhost)
+    const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (isDev) return;
 
-    // Chặn chuột phải
-    const preventContext = (e: MouseEvent) => e.preventDefault();
-    
-    // Chặn phím tắt F12, Ctrl+Shift+I, v.v.
-    const preventShortcuts = (e: KeyboardEvent) => {
-      const { key, ctrlKey, shiftKey } = e;
-      if (key === 'F12') { e.preventDefault(); return false; }
-      if (ctrlKey && shiftKey && (key === 'I' || key === 'J' || key === 'C')) { e.preventDefault(); return false; }
-      if (ctrlKey && key === 'u') { e.preventDefault(); return false; }
-    };
-
-    // Phát hiện kích thước cửa sổ thay đổi bất thường (DevTools mở)
-    const checkInspectorSize = () => {
-      const threshold = 165;
-      const isOpened = window.outerWidth - window.innerWidth > threshold || window.outerHeight - window.innerHeight > threshold;
-      if (isOpened) {
-        window.location.href = "https://www.google.com";
+    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Chặn F12
+      if (e.key === 'F12') {
+        e.preventDefault();
+        return false;
+      }
+      // Chặn Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C
+      if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) {
+        e.preventDefault();
+        return false;
+      }
+      // Chặn Ctrl+U (Xem nguồn trang)
+      if (e.ctrlKey && e.key === 'u') {
+        e.preventDefault();
+        return false;
       }
     };
 
-    window.addEventListener('contextmenu', preventContext);
-    window.addEventListener('keydown', preventShortcuts);
-    const inspectInterval = setInterval(checkInspectorSize, 2500);
+    // Phát hiện DevTools dựa trên kích thước cửa sổ (Dành cho Desktop)
+    const detectDevTools = () => {
+      const widthThreshold = window.outerWidth - window.innerWidth > 160;
+      const heightThreshold = window.outerHeight - window.innerHeight > 160;
+      
+      if (widthThreshold || heightThreshold) {
+        // Redirect người dùng nếu phát hiện can thiệp
+        window.location.href = "https://www.sumysumy.com"; 
+      }
+    };
+
+    // Bẫy Debugger: Làm chậm trình duyệt nếu DevTools mở
+    const debuggerTrap = () => {
+      const start = Date.now();
+      debugger; // Lệnh này chỉ kích hoạt khi DevTools mở
+      const end = Date.now();
+      if (end - start > 100) {
+        window.location.href = "https://www.sumysumy.com";
+      }
+    };
+
+    window.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('keydown', handleKeyDown);
+    const itvDetect = setInterval(detectDevTools, 2000);
+    const itvTrap = setInterval(debuggerTrap, 1000);
 
     return () => {
-      window.removeEventListener('contextmenu', preventContext);
-      window.removeEventListener('keydown', preventShortcuts);
-      clearInterval(inspectInterval);
+      window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+      clearInterval(itvDetect);
+      clearInterval(itvTrap);
     };
   }, []);
 
-  /**
-   * ==========================================================================================
-   * ENGINE CORE: CONFIG SYNCHRONIZATION
-   * ==========================================================================================
-   */
+  // --- HỆ THỐNG CẢNH BÁO AN TOÀN ---
   useEffect(() => {
-    const syncEngine = async () => {
-      try {
-        const response = await fetch('/api/engine');
-        const data = await response.json();
-        if (data && data.spawnRate) {
-          dynamicConfig.current = {
-            spawnRate: data.spawnRate,
-            powerMultiplier: data.multipliers.hp
-          };
-        }
-      } catch (err) {
-        // Fallback cho chế độ offline
-        dynamicConfig.current = { spawnRate: 0.04, powerMultiplier: 1.8 };
-      }
-    };
-    syncEngine();
-
-    // Disable console logs in production
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      const emptyFunc = () => {};
-      console.log = emptyFunc; console.info = emptyFunc; console.warn = emptyFunc; console.error = emptyFunc;
-    }
+    const warning = `
+      [ CẢNH BÁO HỆ THỐNG ACE ]
+      - Không được phép sửa đổi giao diện hoặc logic game.
+      - Mọi hành vi can thiệp vào mã nguồn sẽ khiến dữ liệu bị xóa sạch.
+      - Game được tối ưu hóa cho mục đích trải nghiệm nguyên bản.
+    `;
+    console.warn("%c" + warning, "color: yellow; font-size: 14px; font-weight: bold; background: black; padding: 10px; border: 2px solid red;");
   }, []);
 
-  /**
-   * ==========================================================================================
-   * UI CORE: ORIENTATION MONITORING
-   * ==========================================================================================
-   */
+  // --- KIỂM TRA HƯỚNG MÀN HÌNH (MOBILE ONLY) ---
   useEffect(() => {
-    const updateOrientation = () => {
+    const checkOrientation = () => {
       const isMobile = window.matchMedia("(max-width: 1024px)").matches;
       if (isMobile) {
         setIsPortrait(window.innerHeight > window.innerWidth);
@@ -241,240 +149,187 @@ const App: React.FC = () => {
       }
     };
 
-    updateOrientation();
-    window.addEventListener('resize', updateOrientation);
-    window.addEventListener('orientationchange', updateOrientation);
+    checkOrientation();
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
     
     return () => {
-      window.removeEventListener('resize', updateOrientation);
-      window.removeEventListener('orientationchange', updateOrientation);
+      window.removeEventListener('resize', checkOrientation);
+      window.removeEventListener('orientationchange', checkOrientation);
     };
   }, []);
 
-  /**
-   * ==========================================================================================
-   * BATTLE LOGS HANDLER
-   * ==========================================================================================
-   */
-  const pushLog = useCallback((msg: string, type: LogEntry['type'] = 'normal') => {
-    setLogs(current => {
-      const updated = [...current, { msg, type, id: Date.now() + Math.random() }];
-      return updated.slice(-40); // Giữ stack vừa phải
-    });
+  // --- KẾT NỐI VERCEL BACKEND & BẢO MẬT ---
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const res = await fetch('/api/engine');
+        const data = await res.json();
+        if (data.spawnRate) {
+          secureConfig.current = {
+            spawnRate: data.spawnRate,
+            buff: data.multipliers.hp
+          };
+        }
+      } catch (e) {
+        secureConfig.current = { spawnRate: 0.03, buff: 1.5 };
+      }
+    };
+    fetchConfig();
+    
+    const _n = () => {};
+    // Ghi đè các hàm console để ngăn chặn log
+    if (window.location.hostname !== 'localhost') {
+      console.log = _n; console.warn = _n; console.error = _n; console.table = _n;
+    }
+  }, []);
+
+  const addLog = useCallback((msg: string, type: LogEntry['type'] = 'normal') => {
+    setLogs(prev => [...prev, { msg, type, id: Date.now() + Math.random() }]);
   }, []);
 
   useEffect(() => {
-    if (logsScrollRef.current) {
-      logsScrollRef.current.scrollTop = logsScrollRef.current.scrollHeight;
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollTop = logsEndRef.current.scrollHeight;
     }
   }, [logs]);
 
-  /**
-   * ==========================================================================================
-   * POKEMON GENERATOR
-   * ==========================================================================================
-   */
-  const spawnPokemon = (template: PokemonTemplate, level = 5, noBuff = false): PokemonInstance => {
-    const isLegend = !!template.isLegendary;
-    const finalLevel = isLegend ? Math.min(level, SYSTEM_CONSTANTS.LEGENDARY_LEVEL_LIMIT) : level;
-    
-    // Thuật toán chỉ số cơ bản
-    let health = Math.floor(template.maxHp * (1 + finalLevel / 18) + finalLevel * 2.5);
-    let attack = Math.floor(template.atk * (1 + finalLevel / 45));
-    
-    // Áp dụng nhân hệ số cho Boss/Legendary
-    if (isLegend && !noBuff) {
-      const m = dynamicConfig.current.powerMultiplier;
-      health = Math.floor(health * m);
-      attack = Math.floor(attack * m);
+  const createInstance = (template: PokemonTemplate, level = 5, noLegendaryBuff = false): PokemonInstance => {
+    const isLegendary = !!template.isLegendary;
+    const startLevel = isLegendary ? Math.min(level, 30) : level;
+    let hp = Math.floor(template.maxHp * (1 + startLevel / 20) + startLevel * 2);
+    let atk = Math.floor(template.atk * (1 + startLevel / 50));
+    if (isLegendary && !noLegendaryBuff) {
+      const b = secureConfig.current.buff;
+      hp = Math.floor(hp * b);
+      atk = Math.floor(atk * b);
     }
-    
-    return { 
-      ...template, 
-      level: finalLevel, 
-      maxHp: health, 
-      currentHp: health, 
-      baseAtk: attack, 
-      exp: 0, 
-      uid: Math.random() 
-    };
+    return { ...template, level: startLevel, maxHp: hp, currentHp: hp, baseAtk: atk, exp: 0, uid: Math.random() };
   };
 
-  /**
-   * ==========================================================================================
-   * GAMEPLAY ACTIONS: INITIALIZATION
-   * ==========================================================================================
-   */
-  const pickStarter = (s: PokemonTemplate) => {
-    const instance = spawnPokemon(s, 5);
-    setPlayerTeam([instance]);
+  const selectStarter = (s: PokemonTemplate) => {
+    setPlayerTeam([createInstance(s, 5)]);
     setGameState('lobby');
-    pushLog(`Khởi tạo hệ thống ACE... Thành công!`, 'system');
-    pushLog(`Bạn đã nhận được ${s.name}. Một khởi đầu hứa hẹn!`);
   };
 
-  /**
-   * ==========================================================================================
-   * GAMEPLAY ACTIONS: BATTLE SYSTEM
-   * ==========================================================================================
-   */
-  const triggerBattle = useCallback(async () => {
-    if (isBusy) return;
-    
-    const maxLv = playerTeam.reduce((m, p) => Math.max(m, p.level), 1);
-    const encounterLegend = Math.random() < dynamicConfig.current.spawnRate;
-    
-    let target: PokemonTemplate;
-    let lv: number;
+  const startBattle = useCallback(async () => {
+    const maxPlayerLv = playerTeam.reduce((m, p) => Math.max(m, p.level), 1);
+    const isLegend = Math.random() < secureConfig.current.spawnRate;
+    let t: PokemonTemplate;
+    let enemyLevel: number;
 
-    // Phân bổ thời tiết ngẫu nhiên khi vào trận
-    const weatherPool: WeatherType[] = ['Clear', 'Rain', 'Snow', 'Fog'];
-    const chosenWeather = weatherPool[Math.floor(Math.random() * weatherPool.length)];
-    setWeather(chosenWeather);
+    const weathers: WeatherType[] = ['Clear', 'Rain', 'Snow', 'Fog'];
+    const newWeather = weathers[Math.floor(Math.random() * weathers.length)];
+    setWeather(newWeather);
 
-    if (encounterLegend) {
-      target = POKEMON_DB.legendary[Math.floor(Math.random() * POKEMON_DB.legendary.length)];
-      lv = Math.min(maxLv + 8, SYSTEM_CONSTANTS.LEGENDARY_LEVEL_LIMIT);
+    if (isLegend) {
+      t = POKEMON_DB.legendary[Math.floor(Math.random() * POKEMON_DB.legendary.length)];
+      enemyLevel = Math.min(maxPlayerLv + 10, 30);
     } else {
-      target = POKEMON_DB.wild[Math.floor(Math.random() * POKEMON_DB.wild.length)];
-      const avg = Math.floor(playerTeam.reduce((a, b) => a + b.level, 0) / playerTeam.length);
-      lv = clamp(avg + randInt(-2, 2), 1, SYSTEM_CONSTANTS.LEVEL_LIMIT);
+      t = POKEMON_DB.wild[Math.floor(Math.random() * POKEMON_DB.wild.length)];
+      const avgLv = Math.floor(playerTeam.reduce((acc, p) => acc + p.level, 0) / playerTeam.length);
+      enemyLevel = clamp(avgLv + randInt(-1, 1), 1, 100);
     }
 
-    const wildPk = spawnPokemon(target, lv);
-    setEnemy(wildPk);
+    const newEnemy = createInstance(t, enemyLevel);
+    setEnemy(newEnemy);
     setGameState('vs');
     setMustSwitch(false);
     setBattleView('main');
     setEnemyFainted(false);
     setLogs([]);
-    
-    const firstAlive = playerTeam.findIndex(p => p.currentHp > 0);
-    setActiveIdx(firstAlive >= 0 ? firstAlive : 0);
+    const active = playerTeam.findIndex(p => p.currentHp > 0);
+    setActiveIdx(active);
 
     setTimeout(() => {
       setGameState('battle');
-      pushLog(wildPk.isLegendary ? `⚠ NĂNG LƯỢNG CAO: PHÁT HIỆN ${wildPk.name}!` : `Một ${wildPk.name} hoang dã xuất hiện!`);
-      
-      // Thông báo môi trường chiến đấu
-      if (chosenWeather === 'Rain') pushLog("Cơn mưa nặng hạt làm ướt chiến trường...", 'system');
-      if (chosenWeather === 'Snow') pushLog("Bão tuyết khiến tầm nhìn giảm sút!", 'system');
-      if (chosenWeather === 'Fog') pushLog("Sương mù che khuất mọi thứ...", 'system');
-    }, SYSTEM_CONSTANTS.BATTLE_START_DELAY);
-  }, [playerTeam, pushLog, isBusy]);
+      addLog(newEnemy.isLegendary ? `⚠ CẢNH BÁO: PHÁT HIỆN ${newEnemy.name} HUYỀN THOẠI!` : `Một ${newEnemy.name} hoang dã xuất hiện!`);
+      if (newWeather === 'Rain') addLog("Trời bắt đầu đổ mưa... Sức mạnh hệ Nước tăng cao!");
+      if (newWeather === 'Snow') addLog("Một trận bão tuyết đang thổi tới... Độ chính xác bị giảm!");
+      if (newWeather === 'Fog') addLog("Sương mù bao phủ chiến trường... Các đòn tấn công từ xa bị yếu đi!");
+    }, 2200);
+  }, [playerTeam, addLog]);
 
-  /**
-   * ==========================================================================================
-   * GAMEPLAY ACTIONS: EXPLORATION
-   * ==========================================================================================
-   */
-  const canPass = (x: number, y: number) => {
+  const isWalkable = (x: number, y: number) => {
     if (y < 0 || y >= MAP_DATA.length || x < 0 || x >= MAP_DATA[0].length) return false;
     const tile = MAP_DATA[y][x];
-    return tile !== SYSTEM_CONSTANTS.WALL_TILE;
+    return tile === 0 || tile === 1 || tile === 3;
   };
 
-  const handleStep = useCallback((dx: number, dy: number) => {
+  const move = useCallback((dx: number, dy: number) => {
     if (gameState !== 'lobby' || isBusy || isAutoMoving) return;
-    
     const nx = pos.x + dx;
     const ny = pos.y + dy;
-    
-    if (!canPass(nx, ny)) return;
-    
+    if (!isWalkable(nx, ny)) return;
     setPos({ x: nx, y: ny });
-    const tileType = MAP_DATA[ny][nx];
-    
-    // Trung tâm hồi phục
-    if (tileType === SYSTEM_CONSTANTS.HEAL_TILE) {
-      setPlayerTeam(team => team.map(p => ({ ...p, currentHp: p.maxHp })));
-      pushLog("Năng lượng đội hình đã được nạp đầy!", "system");
+    const targetTile = MAP_DATA[ny][nx];
+    if (targetTile === 3) {
+      setPlayerTeam(prev => prev.map(p => ({ ...p, currentHp: p.maxHp })));
     }
-    
-    // Tỉ lệ gặp quái trong bụi rậm
-    if (tileType === SYSTEM_CONSTANTS.GRASS_TILE && Math.random() < SYSTEM_CONSTANTS.BASE_SPAWN_CHANCE) {
-      triggerBattle();
+    if (targetTile === 1 && Math.random() < 0.15) {
+      startBattle();
     }
-  }, [gameState, isBusy, isAutoMoving, pos, triggerBattle, pushLog]);
+  }, [gameState, isBusy, isAutoMoving, pos, startBattle]);
 
-  /**
-   * Pathfinding cơ bản cho tương tác click map
-   */
-  const calculatePath = (start: {x: number, y: number}, end: {x: number, y: number}) => {
-    const q: {x: number, y: number, steps: {x: number, y: number}[]}[] = [{...start, steps: []}];
+  const findPath = (start: {x: number, y: number}, target: {x: number, y: number}) => {
+    const queue: {x: number, y: number, path: {x: number, y: number}[]}[] = [{...start, path: []}];
     const visited = new Set([`${start.x},${start.y}`]);
     const dirs = [{x: 0, y: -1}, {x: 0, y: 1}, {x: -1, y: 0}, {x: 1, y: 0}];
-    
-    while (q.length > 0) {
-      const {x, y, steps} = q.shift()!;
-      if (x === end.x && y === end.y) return steps;
-      
+    while (queue.length > 0) {
+      const {x, y, path} = queue.shift()!;
+      if (x === target.x && y === target.y) return path;
       for (const d of dirs) {
         const nx = x + d.x;
         const ny = y + d.y;
-        if (canPass(nx, ny) && !visited.has(`${nx},${ny}`)) {
+        if (isWalkable(nx, ny) && !visited.has(`${nx},${ny}`)) {
           visited.add(`${nx},${ny}`);
-          q.push({x: nx, y: ny, steps: [...steps, {x: nx, y: ny}]});
+          queue.push({x: nx, y: ny, path: [...path, {x: nx, y: ny}]});
         }
       }
     }
     return null;
   };
 
-  const onMapClick = async (tx: number, ty: number) => {
+  const handleTileClick = async (tx: number, ty: number) => {
     if (gameState !== 'lobby' || isBusy || isAutoMoving) return;
     if (tx === pos.x && ty === pos.y) return;
-    
-    const way = calculatePath(pos, {x: tx, y: ty});
-    if (!way || way.length === 0) return;
-    
+    const path = findPath(pos, {x: tx, y: ty});
+    if (!path || path.length === 0) return;
     setIsAutoMoving(true);
-    for (const step of way) {
+    for (const step of path) {
       if (gameState !== 'lobby') break;
       setPos(step);
-      const currentTile = MAP_DATA[step.y][step.x];
-      
-      if (currentTile === SYSTEM_CONSTANTS.HEAL_TILE) {
-        setPlayerTeam(t => t.map(p => ({ ...p, currentHp: p.maxHp })));
+      const targetTile = MAP_DATA[step.y][step.x];
+      if (targetTile === 3) {
+        setPlayerTeam(prev => prev.map(p => ({ ...p, currentHp: p.maxHp })));
       }
-      
-      if (currentTile === SYSTEM_CONSTANTS.GRASS_TILE && Math.random() < SYSTEM_CONSTANTS.BASE_SPAWN_CHANCE) {
-        triggerBattle();
+      if (targetTile === 1 && Math.random() < 0.15) {
+        startBattle();
         break;
       }
-      
-      await new Promise(r => setTimeout(r, SYSTEM_CONSTANTS.AUTO_MOVE_DELAY));
+      await new Promise(resolve => setTimeout(resolve, AUTO_MOVE_SPEED));
     }
     setIsAutoMoving(false);
   };
 
-  /**
-   * KEYBOARD LISTENERS
-   */
   useEffect(() => {
-    const keyHandler = (e: KeyboardEvent) => {
-      const lowerKey = e.key.toLowerCase();
-      if (lowerKey === 'arrowup' || lowerKey === 'w') handleStep(0, -1);
-      if (lowerKey === 'arrowdown' || lowerKey === 's') handleStep(0, 1);
-      if (lowerKey === 'arrowleft' || lowerKey === 'a') handleStep(-1, 0);
-      if (lowerKey === 'arrowright' || lowerKey === 'd') handleStep(1, 0);
+    const handleKey = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (k === 'arrowup') move(0, -1);
+      if (k === 'arrowdown') move(0, 1);
+      if (k === 'arrowleft') move(-1, 0);
+      if (k === 'arrowright') move(1, 0);
     };
-    window.addEventListener('keydown', keyHandler);
-    return () => window.removeEventListener('keydown', keyHandler);
-  }, [handleStep]);
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [move]);
 
-  /**
-   * ==========================================================================================
-   * BATTLE ACTIONS: RESOLUTION
-   * ==========================================================================================
-   */
-  const finalizeBattle = (isDefeat = false) => {
-    if (isDefeat) {
-      // Hình phạt khi thua: Đưa về trạm hồi máu
-      setPlayerTeam(t => t.map(p => ({ ...p, currentHp: p.maxHp })));
-      const centers: {x:number, y:number}[] = [];
-      MAP_DATA.forEach((r, y) => r.forEach((c, x) => c === 3 && centers.push({x, y})));
-      if (centers.length) setPos(centers[Math.floor(Math.random() * centers.length)]);
+  const endBattle = (forcedHeal = false) => {
+    if (forcedHeal) {
+      setPlayerTeam(prev => prev.map(p => ({ ...p, currentHp: p.maxHp })));
+      const heals: {x:number, y:number}[] = [];
+      MAP_DATA.forEach((row, y) => row.forEach((cell, x) => cell === 3 && heals.push({x, y})));
+      if (heals.length) setPos(heals[Math.floor(Math.random() * heals.length)]);
     }
     setGameState('lobby');
     setEnemy(null);
@@ -485,313 +340,268 @@ const App: React.FC = () => {
     setIsAutoMoving(false);
   };
 
-  /**
-   * TÍNH TOÁN SÁT THƯƠNG PHỨC HỢP
-   */
-  const getDamage = (move: Move, attacker: PokemonInstance, forPlayer: boolean) => {
-    let power = move.pwr;
-    
-    // Tương tác thời tiết
+  const calculateDamage = (m: Move, attacker: PokemonInstance, isPlayerAttacking: boolean) => {
+    let pwr = m.pwr;
     if (weather === 'Rain') {
-      if (move.type === 'Water') power *= 1.3;
-      if (move.type === 'Fire') power *= 0.7;
+      if (m.type === 'Water') pwr *= 1.2;
+      if (m.type === 'Fire') pwr *= 0.8;
     }
-    if (weather === 'Snow' && move.type === 'Ice') power *= 1.3;
-    if (weather === 'Clear' && move.type === 'Fire') power *= 1.2;
+    if (weather === 'Snow' && m.type === 'Ice') pwr *= 1.2;
+    if (weather === 'Clear' && m.type === 'Fire') pwr *= 1.1;
+    if (weather === 'Fog' && m.pwr > 70) pwr *= 0.8; // Chiêu thức mạnh tầm xa bị cản trở bởi sương mù
 
-    const base = Math.floor((power / 6) * (attacker.level / 5) + (attacker.baseAtk / 16));
-    const randomVariation = (Math.random() * 0.20) + 0.85; // 85% to 105%
-    
-    return Math.max(2, Math.floor((forPlayer ? base + 8 : base) * randomVariation));
+    const baseDmg = Math.floor((pwr / 5) * (attacker.level / 5) + (attacker.baseAtk / 18));
+    return Math.max(1, isPlayerAttacking ? baseDmg + 5 : baseDmg);
   };
 
-  /**
-   * LOGIC LƯỢT ĐỐI THỦ
-   */
-  const executeEnemyAI = async (currentWild: PokemonInstance, activePk: PokemonInstance) => {
-    if (!currentWild || currentWild.currentHp <= 0) return;
+  const enemyTurn = async (currentEnemy: PokemonInstance, currentPlayer: PokemonInstance) => {
+    if (!currentEnemy || currentEnemy.currentHp <= 0) return;
+    const m = currentEnemy.moves[Math.floor(Math.random() * currentEnemy.moves.length)];
+    addLog(`${currentEnemy.name} sử dụng ${m.name}!`, 'enemy');
     
-    const move = currentWild.moves[Math.floor(Math.random() * currentWild.moves.length)];
-    pushLog(`${currentWild.name} tấn công bằng ${move.name}!`, 'enemy');
-    
-    // Cơ chế trượt đòn dựa trên thời tiết
-    let failRate = 0;
-    if (weather === 'Snow') failRate = 0.12;
-    if (weather === 'Fog') failRate = 0.22;
+    // Check hụt chiêu dựa trên thời tiết
+    let missChance = 0;
+    if (weather === 'Snow') missChance = 0.15;
+    if (weather === 'Fog') missChance = 0.20;
 
-    if (Math.random() < failRate) {
-      pushLog(`Đòn tấn công bị chệch hướng!`, 'system');
+    if (Math.random() < missChance) {
+      addLog(`Nhưng chiêu thức đã bị hụt do ${weather === 'Snow' ? 'bão tuyết' : 'sương mù'}!`, 'system');
       return;
     }
 
     setPlayerShaking(true);
     setBattleFlash(true);
-    const damage = getDamage(move, currentWild, false);
+    const dmg = calculateDamage(m, currentEnemy, false);
     
-    await new Promise(r => setTimeout(r, 650));
-    
-    setPlayerShaking(false);
-    setBattleFlash(false);
-    
-    setPlayerTeam(currentTeam => {
-      const nextTeam = [...currentTeam];
-      nextTeam[activeIdx].currentHp = Math.max(0, nextTeam[activeIdx].currentHp - damage);
-      
-      if (nextTeam[activeIdx].currentHp <= 0) {
-        pushLog(`${nextTeam[activeIdx].name} đã mất khả năng chiến đấu!`, 'system');
-        setMustSwitch(true);
-        if (!nextTeam.some(pk => pk.currentHp > 0)) {
-          pushLog("Đội hình đã cạn kiệt năng lượng. Rút lui về trạm hồi phục...", "system");
-          setTimeout(() => finalizeBattle(true), 1300);
+    setTimeout(() => {
+      setPlayerShaking(false);
+      setBattleFlash(false);
+      setPlayerTeam(prev => {
+        const next = [...prev];
+        next[activeIdx].currentHp = Math.max(0, next[activeIdx].currentHp - dmg);
+        if (next[activeIdx].currentHp <= 0) {
+          addLog(`${next[activeIdx].name} đã ngất xỉu!`, 'system');
+          setMustSwitch(true);
+          if (!next.some(pk => pk.currentHp > 0)) {
+            setTimeout(() => endBattle(true), 1200);
+          }
         }
-      }
-      return nextTeam;
-    });
+        return next;
+      });
+    }, 600);
   };
 
-  /**
-   * THỰC HIỆN CHIÊU THỨC
-   */
-  const doMove = async (move: Move) => {
+  const useMove = async (m: Move) => {
     if (isBusy || !enemy) return;
     setIsBusy(true);
-    
     const p = playerTeam[activeIdx];
-    pushLog(`${p.name} sử dụng ${move.name}!`, 'player');
+    addLog(`${p.name} dùng chiêu ${m.name}!`, 'player');
     
-    let missRate = 0;
-    if (weather === 'Snow') missRate = 0.05;
-    if (weather === 'Fog') missRate = 0.10;
+    // Check hụt chiêu cho player
+    let missChance = 0;
+    if (weather === 'Snow') missChance = 0.05;
+    if (weather === 'Fog') missChance = 0.10;
 
-    if (Math.random() < missRate) {
-      pushLog(`Chiêu thức của ${p.name} không trúng mục tiêu!`, 'system');
-      await new Promise(r => setTimeout(r, 650));
-      await executeEnemyAI(enemy, p);
+    if (Math.random() < missChance) {
+      addLog(`Chiêu thức của ${p.name} đã bị hụt!`, 'system');
+      await new Promise(r => setTimeout(r, 600));
+      await enemyTurn(enemy, p);
       setIsBusy(false);
       setBattleView('main');
       return;
     }
 
     setEnemyShaking(true);
-    const dmgValue = getDamage(move, p, true);
-    const updatedEnemyHp = Math.max(0, enemy.currentHp - dmgValue);
-    setEnemy(e => e ? { ...e, currentHp: updatedEnemyHp } : null);
+    const dmg = calculateDamage(m, p, true);
+    const newEnemyHp = Math.max(0, enemy.currentHp - dmg);
+    setEnemy(prev => prev ? { ...prev, currentHp: newEnemyHp } : null);
     
-    await new Promise(r => setTimeout(r, 650));
+    await new Promise(r => setTimeout(r, 600));
     setEnemyShaking(false);
     
-    if (updatedEnemyHp <= 0) {
-      pushLog(`${enemy.name} đã bị khuất phục!`, 'system');
+    if (newEnemyHp <= 0) {
+      addLog(`${enemy.name} đã bị đánh bại!`, 'system');
       setEnemyFainted(true);
-      
-      const lvDiff = enemy.level - p.level;
-      const expPoints = lvDiff > 0 ? lvDiff * 40 : 25;
-      pushLog(`Kinh nghiệm tăng thêm ${expPoints} đơn vị!`);
-      
-      setPlayerTeam(team => {
-        const next = [...team];
-        const currentPk = next[activeIdx];
-        const cap = currentPk.isLegendary ? SYSTEM_CONSTANTS.LEGENDARY_LEVEL_LIMIT : SYSTEM_CONSTANTS.LEVEL_LIMIT;
-        
-        if (currentPk.level < cap) {
-          currentPk.exp += expPoints;
-          while (currentPk.exp >= expNeeded(currentPk.level)) {
-            currentPk.exp -= expNeeded(currentPk.level);
-            currentPk.level++;
-            currentPk.maxHp += 12;
-            currentPk.baseAtk += 3;
-            currentPk.currentHp = currentPk.maxHp;
-            pushLog(`🌟 THĂNG CẤP! ${currentPk.name} đạt cấp ${currentPk.level}!`, 'system');
-            if (currentPk.level >= cap) break;
+      const diff = enemy.level - p.level;
+      const gain = diff > 0 ? diff * 30 : diff === 0 ? 20 : Math.max(1, 20 - 2 * Math.abs(diff));
+      addLog(`Nhận được ${gain} EXP!`);
+      setPlayerTeam(prev => {
+        const next = [...prev];
+        const pk = next[activeIdx];
+        if (pk.isLegendary && pk.level >= 30) {
+          addLog(`${pk.name} đã đạt cấp độ tối đa (30)!`, 'system');
+          pk.exp = 0;
+        } else {
+          pk.exp += gain;
+          while (pk.exp >= expNeeded(pk.level)) {
+            if (pk.isLegendary && pk.level >= 30) {
+              pk.exp = 0;
+              break;
+            }
+            pk.exp -= expNeeded(pk.level);
+            pk.level++;
+            pk.maxHp += 10;
+            pk.baseAtk += 2;
+            pk.currentHp = pk.maxHp;
+            addLog(`🌟 CHÚC MỪNG! ${pk.name} lên cấp ${pk.level}!`, 'system');
+            if (pk.isLegendary && pk.level >= 30) {
+               addLog(`${pk.name} đã chạm ngưỡng sức mạnh tối đa!`, 'system');
+               pk.exp = 0;
+               break;
+            }
           }
         }
         return next;
       });
-      
-      setTimeout(() => finalizeBattle(false), 1200);
+      setTimeout(() => endBattle(false), 1200);
       return;
     }
-    
-    await executeEnemyAI(enemy, p);
+    await enemyTurn(enemy, p);
     setIsBusy(false);
     setBattleView('main');
   };
 
-  /**
-   * THU PHỤC POKEMON
-   */
-  const attemptCapture = async () => {
+  const throwBall = async () => {
     if (isBusy || mustSwitch || !enemy) return;
     setIsBusy(true);
     setPokeballAnim(true);
-    pushLog("Kích hoạt giao thức thu phục!", 'system');
-    
-    await new Promise(r => setTimeout(r, SYSTEM_CONSTANTS.BALL_ANIM_MS));
+    addLog("Đã ném Pokeball! Cố lên!", 'system');
+    await new Promise(r => setTimeout(r, 800));
     setPokeballAnim(false);
-    setEnemyFainted(true); 
-    
-    for (let j = 0; j < 3; j++) {
+    setEnemyFainted(true);
+    for (let i = 0; i < 3; i++) {
       setPokeballShake(true);
       await new Promise(r => setTimeout(r, 800));
       setPokeballShake(false);
     }
-    
-    const healthPercent = enemy.currentHp / enemy.maxHp;
+    const maxLv = playerTeam.reduce((m, p) => Math.max(m, p.level), 1);
+    const hpRatio = enemy.currentHp / enemy.maxHp;
     let rate;
-    
     if (enemy.isLegendary) {
-      rate = clamp(0.04 + (1 - healthPercent) * 0.30, 0.04, 0.55);
+      rate = clamp((0.05 + Math.random() * 0.25) + (1 - hpRatio) * 0.30, 0.05, 0.60);
     } else {
-      rate = clamp(0.65 + (1 - healthPercent) * 0.30, 0.15, 0.98);
+      rate = clamp((enemy.level < maxLv ? 0.80 : 0.75) + (1 - hpRatio) * 0.15, 0.10, 0.95);
     }
-    
     if (Math.random() < rate) {
-      pushLog(`Thành công! ${enemy.name} đã được mã hóa vào đội hình.`, 'system');
+      addLog(`Gotcha! ${enemy.name} đã bị thu phục!`, 'system');
       setShowToast(true);
-      
-      const newMember = { ...enemy, currentHp: enemy.maxHp, uid: Math.random() };
-      setPlayerTeam(prev => {
-        if (prev.length < SYSTEM_CONSTANTS.TEAM_LIMIT) return [...prev, newMember];
-        pushLog("Bộ nhớ đầy! Pokemon đã được chuyển vào PC.", "system");
-        return prev;
-      });
-      
-      setTimeout(() => {
-        setShowToast(false);
-        finalizeBattle(false);
-      }, 1500);
+      const capturedEnemy = { ...enemy, currentHp: enemy.maxHp, uid: Math.random() };
+      if (capturedEnemy.isLegendary && capturedEnemy.level > 30) {
+        capturedEnemy.level = 30;
+      }
+      setPlayerTeam(prev => [...prev, capturedEnemy]);
+      setTimeout(() => setShowToast(false), 1500);
+      setTimeout(() => endBattle(false), 1200);
     } else {
-      pushLog(`Thất bại! ${enemy.name} đã thoát khỏi giao thức.`, 'system');
+      addLog(`Không xong rồi! Nó thoát ra mất!`, 'system');
       setEnemyFainted(false);
-      await executeEnemyAI(enemy, playerTeam[activeIdx]);
+      await enemyTurn(enemy, playerTeam[activeIdx]);
       setIsBusy(false);
       setBattleView('main');
     }
   };
 
-  /**
-   * CHẠY TRỐN
-   */
-  const attemptRun = async () => {
+  const tryRunAway = async () => {
     if (isBusy || mustSwitch || !enemy) return;
     setIsBusy(true);
-    pushLog("Đang thiết lập tuyến đường rút lui...", 'system');
-    
-    await new Promise(r => setTimeout(r, 600));
-    
-    const escaped = Math.random() < (enemy.isLegendary ? 0.35 : 0.88);
-    
-    if (escaped) {
-      pushLog("Rút lui thành công!", 'system');
-      setTimeout(() => finalizeBattle(false), 500);
+    addLog("Đang cố gắng chạy trốn...", 'system');
+    await new Promise(r => setTimeout(r, 500));
+    if (Math.random() < (enemy.isLegendary ? 0.50 : 0.80)) {
+      addLog("Chạy trốn thành công!", 'system');
+      setTimeout(() => endBattle(false), 600);
     } else {
-      pushLog("Tuyến đường bị chặn! Không thể rút lui.", 'system');
-      await executeEnemyAI(enemy, playerTeam[activeIdx]);
+      addLog("Không thể chạy trốn!", 'system');
+      await enemyTurn(enemy, playerTeam[activeIdx]);
       setIsBusy(false);
       setBattleView('main');
     }
   };
 
-  /**
-   * STYLE BUILDER CHO CHIÊU THỨC
-   */
-  const getMoveTheme = (type: string) => {
+  const moveBorderClass = (type: string) => {
     const t = type.toLowerCase();
-    const themes: Record<string, string> = {
-      fire: "border-l-4 border-l-red-500 bg-red-950/40 hover:bg-red-900/60",
-      water: "border-l-4 border-l-blue-500 bg-blue-950/40 hover:bg-blue-900/60",
-      grass: "border-l-4 border-l-emerald-500 bg-emerald-950/40 hover:bg-emerald-900/60",
-      electric: "border-l-4 border-l-yellow-500 bg-yellow-950/40 hover:bg-yellow-900/60",
-      psychic: "border-l-4 border-l-purple-500 bg-purple-950/40 hover:bg-purple-900/60",
-      dragon: "border-l-4 border-l-indigo-500 bg-indigo-950/40 hover:bg-indigo-900/60",
-      flying: "border-l-4 border-l-sky-500 bg-sky-950/40 hover:bg-sky-900/60",
-      normal: "border-l-4 border-l-slate-400 bg-slate-900/40 hover:bg-slate-800/60"
+    const colors: Record<string, string> = {
+      fire: "border-l-4 border-l-red-500 bg-red-900/30",
+      water: "border-l-4 border-l-blue-500 bg-blue-900/30",
+      grass: "border-l-4 border-l-emerald-500 bg-emerald-900/30",
+      electric: "border-l-4 border-l-yellow-500 bg-yellow-900/30",
+      psychic: "border-l-4 border-l-purple-500 bg-purple-900/30",
+      dragon: "border-l-4 border-l-indigo-500 bg-indigo-900/30",
+      flying: "border-l-4 border-l-sky-500 bg-sky-900/30",
+      dark: "border-l-4 border-l-slate-500 bg-slate-900/30",
+      ghost: "border-l-4 border-l-violet-500 bg-violet-900/30"
     };
-    return themes[t] || themes.normal;
+    return colors[t] || "border-l-4 border-l-gray-400 bg-gray-800/30";
   };
 
-  /**
-   * ==========================================================================================
-   * MAIN UI RENDERER
-   * ==========================================================================================
-   */
   return (
-    <div ref={mainContainerRef} className="relative h-screen w-screen overflow-hidden bg-slate-950 font-sans text-slate-200">
-      
-      {/* MOBILE ORIENTATION GUARD */}
+    <div className="relative h-screen w-screen overflow-hidden">
+      {/* PORTRAIT LOCK OVERLAY */}
       {isPortrait && (
-        <div className="fixed inset-0 z-[2000] bg-slate-950 flex flex-col items-center justify-center p-10 text-center animate-in fade-in">
-          <div className="w-24 h-24 mb-6 text-yellow-500 phone-rotate-anim">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="2" width="14" height="20" rx="2" /><path d="M12 18h.01" /></svg>
+        <div className="fixed inset-0 z-[1000] bg-slate-950 flex flex-col items-center justify-center p-8 text-center">
+          <div className="w-32 h-32 mb-8 text-yellow-500 phone-rotate-anim">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+              <path d="M12 18h.01" />
+            </svg>
           </div>
-          <h2 className="text-xl font-black uppercase tracking-tighter mb-2">Vui lòng xoay ngang</h2>
-          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Tối ưu hóa hiển thị cho ACE Engine</p>
+          <h2 className="text-2xl font-black text-white mb-4 uppercase tracking-tighter">Vui lòng xoay ngang điện thoại</h2>
+          <p className="text-slate-400 font-bold text-sm max-w-xs leading-relaxed uppercase tracking-widest">Trải nghiệm Ace System tốt nhất ở chế độ nằm ngang (Landscape)</p>
         </div>
       )}
 
-      {/* SECURITY STATUS WATERMARK */}
-      <div className="hidden lg:block fixed top-3 left-1/2 -translate-x-1/2 z-[500] pointer-events-none">
-        <div className="px-5 py-1.5 bg-slate-900/60 backdrop-blur-md border border-white/5 rounded-full text-[8px] font-black uppercase tracking-[0.4em] flex items-center gap-3">
-           <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
-           SECURITY STATUS: ENCRYPTED
+      {/* WARNING OVERLAY (ONLY DESKTOP) */}
+      <div className="hidden lg:block fixed top-2 left-1/2 -translate-x-1/2 z-[300] pointer-events-none">
+        <div className="px-4 py-1 bg-red-600/20 backdrop-blur-sm border border-red-600/40 rounded-full text-[9px] text-red-200 font-black uppercase tracking-widest">
+           ⚠ HỆ THỐNG GIÁM SÁT: CẤM THAY ĐỔI GIAO DIỆN & LOGIC
         </div>
       </div>
 
-      {/* --- START SCREEN --- */}
       {gameState === 'start' && (
-        <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-slate-900 relative">
-          <div className="absolute inset-0 opacity-20 pointer-events-none">
-            <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-600/30 rounded-full blur-[140px]"></div>
-            <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-red-600/30 rounded-full blur-[140px]"></div>
+        <div className="min-h-screen flex flex-col items-center justify-center text-white p-6 bg-slate-900 relative overflow-hidden">
+          <div className="absolute inset-0 opacity-10 pointer-events-none">
+            <div className="absolute top-10 left-10 w-64 h-64 bg-red-500 rounded-full blur-3xl mix-blend-screen"></div>
+            <div className="absolute bottom-10 right-10 w-64 h-64 bg-blue-500 rounded-full blur-3xl mix-blend-screen"></div>
           </div>
-          
-          <div className="mb-10 relative z-10 animate-float-enemy">
-             <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(255,255,255,0.2)] border-4 border-slate-800">
-                <div className="w-full h-1/2 bg-red-500 absolute top-0 rounded-t-full border-b-4 border-slate-800"></div>
-                <div className="w-6 h-6 bg-white rounded-full border-4 border-slate-800 z-20"></div>
-             </div>
+          <div className="animate-bounce mb-8 relative z-10">
+            <svg width="100" height="100" viewBox="0 0 100 100" className="drop-shadow-2xl">
+              <circle cx="50" cy="50" r="45" fill="white" stroke="#1e293b" strokeWidth="4"/>
+              <path d="M5 50 A 45 45 0 0 1 95 50 L 5 50" fill="#ef4444" stroke="#1e293b" strokeWidth="2"/>
+              <circle cx="50" cy="50" r="14" fill="white" stroke="#1e293b" strokeWidth="4"/>
+              <circle cx="50" cy="50" r="8" fill="white" className="animate-pulse"/>
+            </svg>
           </div>
-
-          <h1 className="text-5xl font-black mb-1 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 uppercase tracking-tighter drop-shadow-lg">ACE POKEMON</h1>
-          <p className="mb-14 text-[9px] text-slate-500 uppercase tracking-[0.8em] font-black">Native RNG Protection Active</p>
-          
-          <div className="flex flex-wrap justify-center gap-6 relative z-10 w-full max-w-5xl">
+          <h1 className="text-5xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 to-yellow-600 drop-shadow-sm uppercase text-center font-pixel tracking-tighter text-[40px]">ACE SYSTEM</h1>
+          <p className="mb-12 text-xs text-slate-400 uppercase tracking-[0.5em] font-bold">Phiên bản Remastered</p>
+          <div className="flex flex-wrap justify-center gap-6 relative z-10">
             {POKEMON_DB.starters.map(s => (
-              <button key={s.id} onClick={() => pickStarter(s)} className="bg-slate-800/40 backdrop-blur-lg p-5 rounded-2xl hover:bg-slate-700/60 transition-all border border-white/5 flex flex-col items-center w-40 group shadow-2xl">
-                <div className="w-16 h-16 mb-4 relative">
-                  <div className="absolute inset-0 bg-white/5 rounded-full blur-xl group-hover:bg-white/10"></div>
-                  <img src={s.img} className="w-full h-full object-contain pixelated group-hover:scale-110 transition-transform duration-300" />
+              <button key={s.id} onClick={() => selectStarter(s)} className="bg-slate-800 p-4 rounded-2xl hover:bg-slate-700 hover:-translate-y-2 transition-all border border-slate-600 flex flex-col items-center w-36 shadow-xl group">
+                <div className="relative w-20 h-20 mb-2">
+                  <img src={s.img} className="w-full h-full object-contain pixelated group-hover:scale-125 transition-transform duration-300 drop-shadow-lg" />
                 </div>
-                <p className="font-black uppercase text-[10px] text-slate-400 group-hover:text-yellow-500 tracking-widest">{s.name}</p>
+                <p className="font-black uppercase text-xs text-slate-300 group-hover:text-yellow-400 transition-colors">{s.name}</p>
               </button>
             ))}
-          </div>
-          
-          <div className="mt-20 text-[8px] text-slate-600 font-bold uppercase tracking-widest bg-black/20 px-4 py-2 rounded-full border border-white/5">
-            Security Hash: {Math.random().toString(16).slice(2, 10).toUpperCase()}
           </div>
         </div>
       )}
 
-      {/* --- WORLD MAP --- */}
       {gameState === 'lobby' && (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 relative">
-          <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px] opacity-10"></div>
-          
-          <div className="relative bg-slate-900 p-1.5 rounded-xl border-4 border-slate-800 shadow-[0_0_100px_rgba(0,0,0,0.8)] overflow-hidden scale-95 sm:scale-100">
-            <div id="game-grid">
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 overflow-hidden relative">
+          <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] opacity-20 pointer-events-none"></div>
+          <div className="relative bg-slate-800 p-2 rounded-xl border-4 border-slate-700 shadow-2xl overflow-hidden scale-95 sm:scale-100 ring-4 ring-black/20">
+            <div id="game-map">
               {MAP_DATA.map((row, y) => (
                 <div key={y} className="flex">
-                  {row.map((tile, x) => (
+                  {row.map((cell, x) => (
                     <div 
                       key={`${x}-${y}`} 
-                      onClick={() => onMapClick(x, y)}
-                      className={`w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center cursor-pointer hover:brightness-110 active:brightness-95 transition-all ${tile === 1 ? 'grass-tile' : tile === 2 ? 'wall-tile' : tile === 3 ? 'heal-tile' : 'path-tile'}`}
+                      onClick={() => handleTileClick(x, y)}
+                      className={`w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center relative cursor-pointer hover:brightness-125 active:brightness-90 transition-all ${cell === 1 ? 'grass-tile' : cell === 2 ? 'wall-tile' : cell === 3 ? 'heal-tile' : 'path-tile'}`}
                     >
-                      {tile === 3 && <div className="text-xl animate-pulse">➕</div>}
+                      {cell === 3 && <span className="text-lg drop-shadow-md animate-pulse">❤️</span>}
                       {pos.x === x && pos.y === y && (
-                        <div className="w-6 h-6 bg-red-600 rounded-full border-2 border-white shadow-[0_0_12px_rgba(239,68,68,0.6)] z-10 transition-all duration-300 scale-110">
-                           <div className="w-full h-1 bg-white/20 mt-1"></div>
+                        <div className="w-6 h-6 bg-red-500 rounded-full border-2 border-white shadow-[0_0_10px_rgba(239,68,68,0.8)] z-10 transition-all duration-300 ease-in-out">
+                          <div className="w-full h-1/2 bg-white rounded-t-full opacity-30"></div>
                         </div>
                       )}
                     </div>
@@ -800,178 +610,157 @@ const App: React.FC = () => {
               ))}
             </div>
           </div>
-
-          {/* D-PAD MOBILE */}
-          <div className="mt-10 grid grid-cols-3 gap-3 sm:hidden z-10">
+          <div className="mt-8 grid grid-cols-3 gap-3 sm:hidden relative z-10">
             <div></div>
-            <button className="d-pad-btn" onClick={() => handleStep(0, -1)}>▲</button>
+            <button className="d-pad-btn" onClick={() => move(0, -1)}>▲</button>
             <div></div>
-            <button className="d-pad-btn" onClick={() => handleStep(-1, 0)}>◀</button>
-            <button className="d-pad-btn" onClick={() => handleStep(0, 1)}>▼</button>
-            <button className="d-pad-btn" onClick={() => handleStep(1, 0)}>▶</button>
+            <button className="d-pad-btn" onClick={() => move(-1, 0)}>◀</button>
+            <button className="d-pad-btn" onClick={() => move(0, 1)}>▼</button>
+            <button className="d-pad-btn" onClick={() => move(1, 0)}>▶</button>
           </div>
-
-          {/* TOP BUTTONS */}
-          <button onClick={() => setMenuOpen(true)} className="absolute top-6 right-6 px-5 py-3 bg-slate-800 border border-white/10 rounded-xl shadow-2xl hover:bg-slate-700 transition-all group flex items-center gap-3">
-            <div className="text-xs font-black uppercase tracking-widest text-slate-400 group-hover:text-white">Đội hình</div>
-            <div className="w-6 h-6 bg-red-600 rounded-md text-[10px] flex items-center justify-center font-black">{playerTeam.length}</div>
+          <button onClick={() => setMenuOpen(true)} className="absolute top-6 right-6 z-50 px-4 py-3 bg-gradient-to-b from-yellow-400 to-yellow-500 rounded-xl border-b-4 border-yellow-700 shadow-lg font-black text-slate-900 flex items-center gap-3 hover:scale-105 active:scale-95 transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" /></svg>
+            <span className="text-xs tracking-wider">ĐỘI HÌNH</span>
+            <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-inner">{playerTeam.length}</span>
           </button>
         </div>
       )}
 
-      {/* --- VS SCREEN --- */}
       {gameState === 'vs' && enemy && (
-        <div className="fixed inset-0 z-[100] vs-container flex flex-col items-center justify-center">
+        <div className="fixed inset-0 z-[90] vs-container flex flex-col items-center justify-center">
           <div className="vs-split-bg"></div>
-          <div className="absolute inset-0 flex items-center justify-center gap-8 sm:gap-32 z-10 w-full px-10">
-            <div className="flex flex-col items-center animate-in slide-in-from-left duration-700">
-              <div className="w-32 h-32 sm:w-48 sm:h-48 drop-shadow-2xl">
+          <div className="absolute inset-0 flex items-center justify-center gap-4 sm:gap-16 z-10 w-full px-4">
+            <div className="vs-card-player flex flex-col items-center">
+              <div className="w-32 h-32 sm:w-48 sm:h-48 relative drop-shadow-[0_0_15px_rgba(59,130,246,0.8)]">
                 <img src={playerTeam[activeIdx].img} className="w-full h-full object-contain pixelated" style={{ transform: 'scaleX(-1)' }} />
               </div>
-              <div className="mt-8 bg-blue-600 px-6 py-2 text-[10px] font-black uppercase tracking-[0.3em] skew-x-[-15deg] border border-white/40">ACE</div>
+              <div className="mt-2 bg-blue-600 text-white text-xs font-black px-4 py-1 skew-x-[-12deg] shadow-lg border-2 border-white uppercase">PLAYER</div>
             </div>
-            
-            <div className="vs-text-container">
-              <h1 className="text-7xl sm:text-[10rem] font-black italic tracking-tighter vs-glitch text-white" style={{ WebkitTextStroke: '2px #fbbf24' }}>VS</h1>
+            <div className="vs-text-container relative z-20">
+              <h1 className="text-7xl sm:text-9xl font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-300 to-red-600 italic tracking-tighter vs-glitch drop-shadow-xl" style={{ WebkitTextStroke: '2px white' }}>VS</h1>
             </div>
-            
-            <div className="flex flex-col items-center animate-in slide-in-from-right duration-700">
-              <div className="w-32 h-32 sm:w-48 sm:h-48 drop-shadow-2xl">
+            <div className="vs-card-enemy flex flex-col items-center">
+              <div className="w-32 h-32 sm:w-48 sm:h-48 relative drop-shadow-[0_0_15px_rgba(239,68,68,0.8)]">
                 <img src={enemy.img} className="w-full h-full object-contain pixelated" />
               </div>
-              <div className="mt-8 bg-red-600 px-6 py-2 text-[10px] font-black uppercase tracking-[0.3em] skew-x-[-15deg] border border-white/40">WILD</div>
+              <div className="mt-2 bg-red-600 text-white text-xs font-black px-4 py-1 skew-x-[-12deg] shadow-lg border-2 border-white uppercase">ENEMY</div>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- BATTLE SCENE --- */}
       {gameState === 'battle' && enemy && (
-        <div className={`fixed inset-0 battle-bg z-[80] flex flex-col ${weather === 'Rain' ? 'brightness-75' : weather === 'Fog' ? 'brightness-90' : ''}`}>
+        <div className={`fixed inset-0 battle-bg z-[80] flex flex-col ${weather === 'Rain' ? 'brightness-[0.8] saturate-[1.2]' : weather === 'Fog' ? 'brightness-[0.9]' : ''}`}>
           <div className="battle-field-ground"></div>
-          <div className={`absolute inset-0 pointer-events-none z-[100] ${battleFlash ? 'flash-red' : ''}`}></div>
+          <div className={`absolute inset-0 pointer-events-none z-50 ${battleFlash ? 'flash-red' : ''}`}></div>
           
-          {/* WEATHER EFFECTS */}
           <div className="weather-layer">
-            {weather === 'Rain' && Array.from({ length: 120 }).map((_, i) => (
-              <div key={i} className="rain-drop" style={{ left: `${Math.random() * 110 - 5}%`, animationDelay: `${Math.random() * 0.8}s` }}></div>
+            {weather === 'Rain' && Array.from({ length: 60 }).map((_, i) => (
+              <div key={i} className="rain-drop" style={{ left: `${Math.random() * 110 - 5}%`, animationDelay: `${Math.random() * 1}s`, opacity: Math.random() }}></div>
             ))}
-            {weather === 'Snow' && Array.from({ length: 70 }).map((_, i) => (
-              <div key={i} className="snow-flake" style={{ left: `${Math.random() * 100}%`, width: `${Math.random() * 5 + 3}px`, height: `${Math.random() * 5 + 3}px`, animationDelay: `${Math.random() * 4}s` }}></div>
+            {weather === 'Snow' && Array.from({ length: 40 }).map((_, i) => (
+              <div key={i} className="snow-flake" style={{ left: `${Math.random() * 100}%`, width: `${Math.random() * 5 + 3}px`, height: `${Math.random() * 5 + 3}px`, animationDelay: `${Math.random() * 3}s` }}></div>
             ))}
             {weather === 'Fog' && <div className="fog-layer fog-active"></div>}
+            {weather === 'Clear' && <div className="sun-glare"></div>}
           </div>
 
-          {/* CAPTURE TOAST */}
           {showToast && (
-            <div className="absolute inset-0 z-[200] flex items-center justify-center pointer-events-none">
-              <div className="px-10 py-5 bg-emerald-600/90 backdrop-blur rounded-2xl text-white font-black uppercase tracking-[0.5em] shadow-[0_0_60px_rgba(16,185,129,0.5)] animate-in zoom-in">
-                CAPTURED
+            <div className="absolute inset-0 z-[120] flex items-center justify-center pointer-events-none">
+              <div className="px-10 py-5 rounded-xl bg-black/80 backdrop-blur text-white font-black uppercase tracking-widest border-y-4 border-yellow-400 shadow-[0_0_50px_rgba(251,191,36,0.5)] transform scale-110">
+                <span className="text-yellow-400 mr-2">★</span> BẮT THÀNH CÔNG <span className="text-yellow-400 ml-2">★</span>
               </div>
             </div>
           )}
-
-          {/* MAIN BATTLE STAGE */}
-          <div className="relative w-full flex-1">
+          <div className="relative w-full flex-1 overflow-hidden">
+            <div className="absolute top-4 left-6 z-50">
+               <div className="bg-black/40 backdrop-blur-sm px-3 py-1 rounded-full border border-white/20 flex items-center gap-2">
+                  <span className="text-[10px] text-white font-black uppercase tracking-widest">Thời tiết:</span>
+                  <span className={`text-[10px] font-black uppercase ${weather === 'Rain' ? 'text-blue-400' : weather === 'Snow' ? 'text-white' : weather === 'Fog' ? 'text-gray-300' : 'text-yellow-400'}`}>{weather === 'Fog' ? 'Sương mù' : weather === 'Rain' ? 'Mưa' : weather === 'Snow' ? 'Tuyết' : 'Nắng'}</span>
+               </div>
+            </div>
             
-            {/* ENEMY SECTION (TOP RIGHT) - Redesigned to be smaller */}
-            <div className="absolute top-10 right-10 sm:right-32 flex flex-col items-end z-20 w-1/3 min-w-[180px]">
-              <div className="info-glass p-3 rounded-xl border-l-4 border-red-500 w-full mb-3 shadow-xl">
-                <div className="flex justify-between items-center mb-2">
-                   <div className="flex items-center gap-1.5 overflow-hidden">
-                     <p className="font-black text-[9px] uppercase text-slate-700 truncate">{enemy.name}</p>
-                     {enemy.isLegendary && <span className="text-[7px] bg-red-600 text-white px-1 rounded font-black">LEG</span>}
-                   </div>
-                   <p className="text-[8px] font-black text-slate-400">Lv{enemy.level}</p>
+            <div className="absolute top-12 right-6 sm:right-16 flex flex-col items-end z-20 w-1/2">
+              <div className="info-glass p-3 rounded-xl rounded-br-none border-l-4 border-l-red-500 w-full max-w-[220px] mb-2 shadow-lg relative z-30">
+                <div className="flex justify-between items-baseline mb-1">
+                  <p className="font-bold text-sm uppercase text-slate-800 tracking-tight font-pixel text-[10px]">{enemy.name}</p>
+                  <p className="text-[10px] font-black text-slate-500">Lv {enemy.level}</p>
                 </div>
-                <div className="h-2 bg-slate-300 rounded-full overflow-hidden border border-slate-400 relative">
-                  <div className={`h-full transition-all duration-700 ${(enemy.currentHp/enemy.maxHp)*100 < 25 ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${(enemy.currentHp/enemy.maxHp)*100}%` }}></div>
+                <div className="h-2.5 bg-slate-200 rounded-full overflow-hidden border border-slate-300 relative">
+                  <div className={`h-full transition-all duration-500 shadow-[0_0_10px_rgba(16,185,129,0.5)] ${(enemy.currentHp/enemy.maxHp)*100 < 20 ? 'bg-red-500' : (enemy.currentHp/enemy.maxHp)*100 < 50 ? 'bg-yellow-400' : 'bg-gradient-to-r from-emerald-500 to-emerald-400'}`} style={{ width: `${(enemy.currentHp/enemy.maxHp)*100}%` }}></div>
                 </div>
+                <div className="flex justify-between mt-1"><p className="text-[9px] text-slate-500 font-bold font-mono ml-auto">{enemy.currentHp}/{enemy.maxHp}</p></div>
               </div>
-
-              {/* ENEMY SPRITE - Scaled Down */}
-              <div className="w-28 h-28 sm:w-36 sm:h-36 flex flex-col items-center justify-end relative mr-8">
-                <div className="pokemon-base-circle bottom-0 scale-75 opacity-30"></div>
-                <img src={enemy.img} className={`w-20 h-20 sm:w-28 sm:h-28 object-contain pixelated relative z-10 ${enemyShaking ? 'shake' : 'animate-float-enemy'}`} 
-                  style={{ 
-                    opacity: enemyFainted ? 0 : 1, 
-                    transform: enemyFainted ? 'scale(0) translateY(50px)' : 'none', 
-                    transition: 'all 0.6s ease' 
-                  }} 
-                />
-                <div className="shadow-oval scale-75" style={{ bottom: '10px' }}></div>
-                
-                {/* POKEBALL ANIM */}
+              <div className="w-32 h-32 sm:w-48 sm:h-48 flex flex-col items-center justify-end relative mr-8">
+                <div className="pokemon-base-circle bottom-0"></div>
+                <img src={enemy.img} className={`w-full h-full object-contain pixelated drop-shadow-2xl relative z-10 ${enemy.isLegendary ? 'legendary-glow' : ''} ${enemyShaking ? 'shake' : 'animate-float-enemy'}`} style={{ opacity: enemyFainted ? 0 : 1, transform: enemyFainted ? 'scale(0.1) translateY(50px)' : 'translateY(12px)', transition: 'all 0.6s' }} />
+                <div className="shadow-oval" style={{ bottom: '10px' }}></div>
                 <div className={`absolute inset-0 -top-20 flex items-center justify-center z-50 pointer-events-none ${pokeballAnim ? 'ball-animation' : 'hidden'}`}>
-                   <div className={`w-8 h-8 bg-red-500 rounded-full border-2 border-slate-900 ${pokeballShake ? 'ball-shake' : ''}`}>
-                      <div className="w-full h-1/2 bg-white absolute bottom-0 rounded-b-full"></div>
-                      <div className="w-2 h-2 bg-white rounded-full absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 border border-slate-900"></div>
-                   </div>
+                  <svg className={`w-10 h-10 drop-shadow-xl ${pokeballShake ? 'ball-shake' : ''}`} viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="48" fill="white" stroke="#1e293b" strokeWidth="4"/>
+                    <path d="M2 50 A 48 48 0 0 1 98 50 L 2 50" fill="#ef4444" stroke="#1e293b" strokeWidth="2"/>
+                    <circle cx="50" cy="50" r="14" fill="white" stroke="#1e293b" strokeWidth="5"/>
+                    <circle cx="50" cy="50" r="10" fill="white" stroke="#9ca3af" strokeWidth="1"/>
+                  </svg>
                 </div>
               </div>
             </div>
-
-            {/* PLAYER SECTION (BOTTOM LEFT) - Redesigned to be smaller */}
-            <div className="absolute bottom-10 left-10 sm:left-32 flex flex-col-reverse items-start z-20 w-1/3 min-w-[180px]">
-              <div className="info-glass p-3 rounded-xl border-r-4 border-blue-500 w-full mt-3 shadow-xl">
-                <div className="flex justify-between items-center mb-2">
-                   <p className="font-black text-[9px] uppercase text-slate-700 truncate">{playerTeam[activeIdx].name}</p>
-                   <p className="text-[8px] font-black text-blue-500">Lv{playerTeam[activeIdx].level}</p>
+            <div className="absolute bottom-8 left-6 sm:left-16 flex flex-col-reverse items-start z-20 w-1/2">
+              <div className="info-glass p-3 rounded-xl rounded-tl-none border-r-4 border-r-blue-500 w-full max-w-[240px] mt-2 shadow-lg relative z-30">
+                <div className="flex justify-between items-baseline mb-1">
+                  <p className="font-bold text-sm uppercase text-slate-800 tracking-tight font-pixel text-[10px]">{playerTeam[activeIdx].name}</p>
+                  <p className="text-[10px] font-black text-blue-600">Lv {playerTeam[activeIdx].level}</p>
                 </div>
-                <div className="h-2.5 bg-slate-300 rounded-full overflow-hidden border border-slate-400 mb-1.5 relative">
-                  <div className={`h-full transition-all duration-700 ${(playerTeam[activeIdx].currentHp/playerTeam[activeIdx].maxHp)*100 < 25 ? 'bg-rose-500' : 'bg-blue-500'}`} style={{ width: `${(playerTeam[activeIdx].currentHp/playerTeam[activeIdx].maxHp)*100}%` }}></div>
+                <div className="h-3 bg-slate-200 rounded-full overflow-hidden border border-slate-300 mb-1 relative">
+                  <div className={`h-full transition-all duration-500 shadow-[0_0_10px_rgba(59,130,246,0.5)] ${(playerTeam[activeIdx].currentHp/playerTeam[activeIdx].maxHp)*100 < 20 ? 'bg-red-500' : (playerTeam[activeIdx].currentHp/playerTeam[activeIdx].maxHp)*100 < 50 ? 'bg-yellow-400' : 'bg-gradient-to-r from-blue-500 to-blue-400'}`} style={{ width: `${(playerTeam[activeIdx].currentHp/playerTeam[activeIdx].maxHp)*100}%` }}></div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-1 bg-slate-400 rounded-full overflow-hidden">
-                    <div className="h-full bg-yellow-400" style={{ width: `${(playerTeam[activeIdx].exp / expNeeded(playerTeam[activeIdx].level)) * 100}%` }}></div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[8px] font-black text-blue-500 uppercase tracking-tighter">EXP</span>
+                  <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden border border-slate-300 shadow-inner">
+                    <div className="h-full bg-gradient-to-r from-blue-400 to-cyan-300 transition-all duration-700" style={{ width: `${Math.floor((playerTeam[activeIdx].exp / expNeeded(playerTeam[activeIdx].level)) * 100)}%` }}></div>
                   </div>
-                  <span className="text-[7px] font-black text-slate-500 uppercase">EXP</span>
+                </div>
+                <div className="flex justify-between mt-1 items-center">
+                  <span className="text-[9px] font-mono text-slate-600 font-bold tracking-tight">{playerTeam[activeIdx].currentHp}/{playerTeam[activeIdx].maxHp} HP</span>
                 </div>
               </div>
-
-              {/* PLAYER SPRITE - Scaled Down */}
-              <div className="w-32 h-32 sm:w-40 sm:h-40 flex flex-col items-center justify-end relative ml-8">
-                <div className="pokemon-base-circle bottom-0 scale-90 opacity-30"></div>
-                <img src={playerTeam[activeIdx].img} className={`w-24 h-24 sm:w-32 sm:h-32 object-contain pixelated relative z-10 ${playerShaking ? 'shake' : 'animate-float-player'}`} />
-                <div className="shadow-oval scale-90" style={{ bottom: '12px' }}></div>
+              <div className="w-40 h-40 sm:w-56 sm:h-56 flex flex-col items-center justify-end relative ml-4 mb-4">
+                <div className="pokemon-base-circle bottom-0"></div>
+                <img src={playerTeam[activeIdx].img} className={`w-full h-full object-contain pixelated drop-shadow-2xl relative z-10 ${playerShaking ? 'shake' : 'animate-float-player'}`} style={{ transform: 'translateY(12px) scaleX(-1)' }} />
+                <div className="shadow-oval" style={{ bottom: '10px' }}></div>
               </div>
             </div>
           </div>
-
-          {/* BATTLE CONTROLS PANEL */}
-          <div className="bg-slate-900 border-t-4 border-slate-800 p-4 sm:p-6 flex flex-col sm:flex-row gap-4 h-auto sm:h-52 z-[110] relative">
-            
-            {/* CONSOLE LOGS */}
-            <div ref={logsScrollRef} className="flex-1 bg-black/40 p-4 rounded-xl text-white font-mono text-[10px] overflow-y-auto custom-scrollbar border border-white/5 leading-relaxed">
-              {logs.map(log => (
-                <div key={log.id} className={`mb-2 pl-2 border-l-2 ${log.type === 'player' ? 'border-blue-500 text-blue-200' : log.type === 'enemy' ? 'border-red-500 text-red-200' : log.type === 'system' ? 'border-yellow-500 text-yellow-100 font-bold' : 'border-slate-600 text-slate-400'}`}>
-                   {log.msg}
+          <div className="bg-slate-900/95 backdrop-blur-md p-4 flex flex-col sm:flex-row gap-4 border-t-2 border-slate-700 h-auto sm:h-[180px] z-[100] shrink-0 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] relative">
+            <div ref={logsEndRef} className="flex-1 bg-black/60 p-4 rounded-xl text-white font-mono text-[11px] overflow-y-auto custom-scrollbar border border-white/10 h-28 sm:h-full shadow-inner leading-relaxed">
+              {logs.map(l => (
+                <div key={l.id} className={`mb-2 border-l-2 border-white/10 pl-2 py-0.5 ${l.type === 'player' ? 'text-blue-300' : l.type === 'enemy' ? 'text-red-300' : l.type === 'system' ? 'text-yellow-300 font-bold' : 'text-slate-300'}`}>
+                   <span className="opacity-50 mr-2 text-[9px]">{l.type === 'player' ? '➤' : l.type === 'enemy' ? '⚔' : l.type === 'system' ? '★' : '»'}</span>{l.msg}
                 </div>
               ))}
             </div>
-
-            {/* INTERACTION GRID */}
-            <div className="grid grid-cols-2 gap-2 w-full sm:w-[380px]">
+            <div className="grid grid-cols-2 gap-2 w-full sm:w-[420px]">
               {mustSwitch ? (
-                <button onClick={() => setMenuOpen(true)} className="bg-blue-600 col-span-2 py-4 hover:bg-blue-500 border-b-4 border-blue-900 text-white rounded-xl font-black uppercase text-[10px] active:translate-y-1 active:border-b-0 transition-all">
-                   Thay đổi Pokemon
-                </button>
+                <button onClick={() => setMenuOpen(true)} className="bg-blue-600 col-span-2 py-4 hover:bg-blue-500 border-b-4 border-blue-800 text-white rounded-lg font-black uppercase text-[11px] active:translate-y-1 active:border-b-0 transition-all shadow-lg">THAY ĐỔI POKÉMON</button>
               ) : battleView === 'main' ? (
                 <>
-                  <button onClick={() => setBattleView('moves')} className="bg-rose-600 border-b-4 border-rose-800 hover:bg-rose-500 text-white rounded-xl font-black uppercase text-[10px] py-3 shadow-lg active:translate-y-1 active:border-b-0 transition-all">Chiến đấu</button>
-                  <button onClick={attemptCapture} className="bg-amber-500 border-b-4 border-amber-700 hover:bg-amber-400 text-white rounded-xl font-black uppercase text-[10px] py-3 shadow-lg active:translate-y-1 active:border-b-0 transition-all">Thu phục</button>
-                  <button onClick={() => setMenuOpen(true)} className="bg-indigo-600 border-b-4 border-indigo-800 hover:bg-indigo-500 text-white rounded-xl font-black uppercase text-[10px] py-3 shadow-lg active:translate-y-1 active:border-b-0 transition-all">Pokemon</button>
-                  <button onClick={attemptRun} className="bg-slate-700 border-b-4 border-slate-900 hover:bg-slate-600 text-white rounded-xl font-black uppercase text-[10px] py-3 shadow-lg active:translate-y-1 active:border-b-0 transition-all">Bỏ chạy</button>
+                  <button onClick={() => setBattleView('moves')} className="bg-rose-600 border-b-4 border-rose-800 hover:bg-rose-500 text-white rounded-lg font-black uppercase text-[11px] py-3 active:translate-y-1 active:border-b-0 transition-all shadow-lg">CHIẾN ĐẤU</button>
+                  <button onClick={throwBall} className="bg-amber-500 border-b-4 border-amber-700 hover:bg-amber-400 text-white rounded-lg font-black uppercase text-[11px] py-3 active:translate-y-1 active:border-b-0 transition-all shadow-lg">TÚI ĐỒ</button>
+                  <button onClick={() => setMenuOpen(true)} className="bg-indigo-500 border-b-4 border-indigo-700 hover:bg-indigo-400 text-white rounded-lg font-black uppercase text-[11px] py-3 active:translate-y-1 active:border-b-0 transition-all shadow-lg">ĐỔI POKÉMON</button>
+                  <button onClick={tryRunAway} className="bg-slate-600 border-b-4 border-slate-800 hover:bg-slate-500 text-white rounded-lg font-black uppercase text-[11px] py-3 active:translate-y-1 active:border-b-0 transition-all shadow-lg">BỎ CHẠY</button>
                 </>
               ) : (
                 <>
                   {playerTeam[activeIdx].moves.map(m => (
-                    <button key={m.name} onClick={() => doMove(m)} className={`${getMoveTheme(m.type)} text-white rounded-xl font-black uppercase text-[9px] py-3 px-4 shadow-lg active:translate-y-1 transition-all flex flex-col text-left`}>
-                      <span>{m.name}</span>
-                      <span className="text-[7px] opacity-40">{m.type}</span>
+                    <button key={m.name} onClick={() => useMove(m)} className={`${moveBorderClass(m.type)} text-white rounded-lg font-black uppercase text-[10px] py-3 active:translate-y-1 active:border-b-0 transition-all shadow-lg text-left pl-3`}>
+                      <div className="flex justify-between pr-2">
+                        <span>{m.name}</span>
+                        {/* Hiển thị bonus thời tiết */}
+                        {((weather === 'Rain' && m.type === 'Water') || (weather === 'Snow' && m.type === 'Ice')) && <span className="text-cyan-400">↑</span>}
+                      </div>
                     </button>
                   ))}
-                  <button onClick={() => setBattleView('main')} className="bg-slate-800 col-span-2 text-[9px] hover:bg-slate-700 text-white rounded-lg font-black uppercase py-2 border border-white/5">Hủy</button>
+                  <button onClick={() => setBattleView('main')} className="bg-slate-600 col-span-2 text-[9px] h-8 hover:bg-slate-500 text-white rounded-lg font-black uppercase active:translate-y-1 transition-all shadow-lg">QUAY LẠI</button>
                 </>
               )}
             </div>
@@ -979,76 +768,66 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* --- TEAM OVERLAY --- */}
       {menuOpen && (
-        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-xl p-6 sm:p-12 z-[500] flex flex-col items-center animate-in fade-in duration-300">
-          <div className="w-full max-w-3xl flex justify-between items-center mb-8 border-b border-white/10 pb-6">
-            <h2 className="text-2xl font-black uppercase tracking-tighter text-yellow-500 italic">Hệ thống đội hình</h2>
-            {!mustSwitch && (
-              <button onClick={() => setMenuOpen(false)} className="bg-slate-800 p-2 rounded-lg hover:bg-red-600 transition-all">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth="3" /></svg>
-              </button>
-            )}
+        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-xl text-white p-6 z-[200] flex flex-col items-center">
+          <div className="flex justify-between items-center mb-8 w-full max-w-xl border-b border-white/10 pb-4">
+            <div className="flex flex-col">
+              <h2 className="text-2xl font-black italic uppercase text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-yellow-600">ĐỘI HÌNH CỦA BẠN</h2>
+            </div>
+            {!mustSwitch && <button onClick={() => setMenuOpen(false)} className="bg-slate-800 text-slate-400 hover:text-white w-10 h-10 rounded-full font-black hover:bg-slate-700 shadow-lg flex items-center justify-center border border-white/10">✕</button>}
           </div>
+          <div className="grid gap-4 w-full max-w-xl overflow-y-auto custom-scrollbar pr-2 flex-1 pb-10">
+            {playerTeam.map((p, i) => {
+              const isAce = i === 0;
+              const isFainted = p.currentHp <= 0;
+              const isCurrentlyInBattle = i === activeIdx && gameState === 'battle';
+              const isLegendary = !!p.isLegendary;
 
-          <div className="grid gap-4 w-full max-w-3xl overflow-y-auto custom-scrollbar flex-1 pb-10">
-            {playerTeam.map((p, idx) => {
-              const isActive = idx === activeIdx && gameState === 'battle';
-              const dead = p.currentHp <= 0;
               return (
-                <div 
-                  key={p.uid} 
-                  onClick={() => {
-                    if (gameState === 'battle') {
-                      if (dead || isActive) return;
-                      setActiveIdx(idx);
-                      setMustSwitch(false);
-                      setBattleView('main');
-                      pushLog(`Triển khai ${p.name}!`, 'player');
-                      setMenuOpen(false);
-                    } else {
-                      if (idx === 0) return;
-                      const newTeam = [...playerTeam];
-                      const selected = newTeam.splice(idx, 1)[0];
-                      newTeam.unshift(selected);
-                      setPlayerTeam(newTeam);
-                      pushLog(`${selected.name} hiện là trưởng nhóm.`, 'system');
-                    }
-                  }} 
-                  className={`bg-slate-900/50 p-4 rounded-2xl flex items-center gap-5 border-2 transition-all cursor-pointer group ${idx === 0 ? 'border-yellow-500/50 bg-yellow-500/5' : 'border-white/5 hover:border-blue-500/50'} ${dead ? 'opacity-40 grayscale' : ''} ${isActive ? 'ring-2 ring-blue-500' : ''}`}
-                >
-                  <div className="w-16 h-16 bg-black/40 rounded-xl flex items-center justify-center border border-white/5">
-                    <img src={p.img} className="w-12 h-12 object-contain pixelated group-hover:scale-110 transition-transform" />
+                <div key={p.uid} onClick={() => {
+                  if (gameState === 'battle') {
+                    if (isFainted || isCurrentlyInBattle) return;
+                    setActiveIdx(i);
+                    setMustSwitch(false);
+                    setBattleView('main');
+                    addLog(`Cố lên nhé, ${p.name}!`, 'player');
+                    setMenuOpen(false);
+                  } else {
+                    if (isAce) return;
+                    const next = [...playerTeam];
+                    const selected = next.splice(i, 1)[0];
+                    next.unshift(selected);
+                    setPlayerTeam(next);
+                  }
+                }} className={`bg-slate-800 p-4 rounded-xl flex items-center gap-4 transition-all cursor-pointer relative group border ${isAce ? 'ace-border border-yellow-500' : 'border-slate-700 hover:border-slate-500 hover:bg-slate-750'} ${isFainted ? 'opacity-40 grayscale' : ''}`}>
+                  {isAce && <div className="ace-tag">ACE</div>}
+                  <div className="w-16 h-16 bg-slate-900 rounded-lg flex items-center justify-center overflow-hidden border border-slate-700">
+                    <img src={p.img} className="w-12 h-12 object-contain pixelated group-hover:scale-125 transition-transform duration-300" />
                   </div>
                   <div className="flex-1">
-                    <div className="flex justify-between items-baseline mb-2">
-                       <p className="font-black text-[11px] uppercase tracking-widest text-slate-200">{p.name}</p>
-                       <p className="text-[9px] font-black text-slate-500">LEVEL {p.level}</p>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <p className={`font-black uppercase ${isAce ? 'text-yellow-400' : 'text-slate-100'} text-xs`}>{p.name}</p>
+                        {isLegendary && <span className="bg-amber-600 text-white text-[8px] px-1 rounded font-black">LEGEND</span>}
+                      </div>
+                      <p className="text-[9px] font-black text-slate-500">LV {p.level}{isLegendary && p.level >= 30 ? '/30 (MAX)' : ''}</p>
                     </div>
-                    <div className="h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
-                      <div className={`h-full transition-all duration-500 ${dead ? 'bg-slate-700' : (p.currentHp/p.maxHp)*100 < 30 ? 'bg-rose-600' : 'bg-blue-600'}`} style={{ width: `${(p.currentHp / p.maxHp) * 100}%` }}></div>
+                    <div className="h-2 bg-slate-900 rounded-full mt-2 overflow-hidden border border-white/5">
+                      <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all" style={{ width: `${(p.currentHp / p.maxHp) * 100}%` }}></div>
                     </div>
-                    <div className="flex justify-between mt-1">
-                       <span className="text-[7px] text-slate-600 font-bold uppercase tracking-tighter">{p.currentHp} / {p.maxHp} HP</span>
-                       {p.isLegendary && <span className="text-[7px] font-black text-amber-500 italic">LEGENDARY TYPE</span>}
+                    <div className="flex items-center gap-1.5 mt-2">
+                       <div className="flex-1 h-1 bg-slate-700 rounded-full overflow-hidden">
+                         <div className="h-full bg-blue-500" style={{ width: `${(isLegendary && p.level >= 30) ? 100 : Math.floor((p.exp / expNeeded(p.level)) * 100)}%` }}></div>
+                       </div>
+                       <span className="text-[7px] text-slate-500 font-bold uppercase">EXP</span>
                     </div>
                   </div>
                 </div>
               );
             })}
           </div>
-          
-          <div className="text-[8px] text-slate-600 font-bold uppercase tracking-[0.4em] mt-6 text-center">
-            ACE SYSTEM V3.0 • NATIVE RNG SECURED
-          </div>
-        </div>
+        </div>  
       )}
-
-      {/* GLOBAL BACKGROUND ANIMATION */}
-      <div className="fixed inset-0 pointer-events-none z-[-1] opacity-30">
-        <div className="absolute top-1/4 left-1/4 w-1 h-1 bg-white rounded-full animate-ping"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-1 h-1 bg-white rounded-full animate-ping" style={{ animationDelay: '1.5s' }}></div>
-      </div>
     </div>
   );
 };
